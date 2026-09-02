@@ -785,6 +785,295 @@ async function getVisibleDialog(page) {
 }
 
 async function enrichFromRow(
+    page,
+    row,
+    requestDelayMs,
+    crawlerLog,
+) {
+    try {
+        const clickable =
+            row.locator(
+                'a, button, [role="button"]',
+            );
+
+        const clickableCount =
+            await clickable.count();
+
+        crawlerLog.debug(
+            'Opening BPOM product detail.',
+            {
+                clickableCount,
+            },
+        );
+
+        if (clickableCount > 0) {
+            /*
+             * Registration number / product row
+             * normally contains the detail trigger.
+             */
+            await clickable
+                .first()
+                .click();
+        } else {
+            await row.click();
+        }
+
+        /*
+         * BPOM fills modal content dynamically,
+         * so give it some time after click.
+         */
+        await page.waitForTimeout(
+            Math.max(
+                800,
+                requestDelayMs,
+            ),
+        );
+
+        const dialog =
+            await getVisibleDialog(
+                page,
+            );
+
+        if (!dialog) {
+            crawlerLog.debug(
+                'Product detail dialog was not detected.',
+            );
+
+            return {};
+        }
+
+        await dialog
+            .waitFor({
+                state: 'visible',
+                timeout: 10000,
+            })
+            .catch(
+                () => undefined,
+            );
+
+        /*
+         * Wait until modal contains more
+         * than just its heading.
+         */
+        await page.waitForFunction(
+            () => {
+                const dialogs = [
+                    ...document.querySelectorAll(
+                        '.modal, [role="dialog"]',
+                    ),
+                ];
+
+                const visible =
+                    dialogs.find(
+                        (el) => {
+                            const rect =
+                                el.getBoundingClientRect();
+
+                            const style =
+                                window.getComputedStyle(
+                                    el,
+                                );
+
+                            return (
+                                rect.width > 0
+                                && rect.height > 0
+                                && style.display
+                                    !== 'none'
+                                && style.visibility
+                                    !== 'hidden'
+                            );
+                        },
+                    );
+
+                if (!visible) {
+                    return false;
+                }
+
+                const text =
+                    (
+                        visible.innerText
+                        || ''
+                    )
+                        .replace(
+                            /\s+/g,
+                            ' ',
+                        )
+                        .trim();
+
+                return text.length > 20;
+            },
+            {
+                timeout: 10000,
+            },
+        ).catch(
+            () => undefined,
+        );
+
+        const dialogText =
+            clean(
+                await dialog
+                    .innerText()
+                    .catch(
+                        () => '',
+                    ),
+            );
+
+        crawlerLog.debug(
+            'BPOM product detail dialog detected.',
+            {
+                textPreview:
+                    dialogText.slice(
+                        0,
+                        2000,
+                    ),
+            },
+        );
+
+        const rawPairs =
+            await extractDetailPairs(
+                dialog,
+            );
+
+        crawlerLog.debug(
+            'BPOM product detail raw fields.',
+            {
+                rawPairs,
+            },
+        );
+
+        const details =
+            mapDetails(
+                rawPairs,
+            );
+
+        crawlerLog.debug(
+            'BPOM mapped product details.',
+            {
+                details,
+            },
+        );
+
+        /*
+         * If nothing useful is extracted,
+         * save the modal HTML for diagnosis.
+         */
+        const hasUsefulDetail =
+            Boolean(
+                details.composition
+                || details.expiryDate
+                || details.status
+                || details.dosageForm
+                || details.applicationDate
+                || details.registrationNumber
+                || details.productName
+                || details.brand,
+            );
+
+        if (!hasUsefulDetail) {
+            const debugId =
+                crypto
+                    .createHash('md5')
+                    .update(
+                        `${Date.now()}-${dialogText}`,
+                    )
+                    .digest('hex')
+                    .slice(
+                        0,
+                        12,
+                    );
+
+            await Actor.setValue(
+                `DEBUG_DETAIL_${debugId}`,
+                {
+                    dialogText,
+                    rawPairs,
+                    details,
+                    html:
+                        await dialog
+                            .innerHTML()
+                            .catch(
+                                () => '',
+                            ),
+                },
+            );
+
+            crawlerLog.warning(
+                'Detail modal opened but no structured fields could be extracted.',
+                {
+                    debugKey:
+                        `DEBUG_DETAIL_${debugId}`,
+                },
+            );
+        }
+
+        /*
+         * Close modal.
+         */
+        const closeButton =
+            await visibleLocator(
+                dialog.getByRole(
+                    'button',
+                    {
+                        name:
+                            /^(Close|Tutup)$/i,
+                    },
+                ),
+            );
+
+        if (closeButton) {
+            await closeButton
+                .click()
+                .catch(
+                    () => undefined,
+                );
+        } else {
+            const xButton =
+                dialog.locator(
+                    'button.close, .btn-close, [data-dismiss="modal"], [data-bs-dismiss="modal"]',
+                );
+
+            if (
+                await xButton.count()
+            ) {
+                await xButton
+                    .first()
+                    .click()
+                    .catch(
+                        () => undefined,
+                    );
+            } else {
+                await page.keyboard
+                    .press('Escape')
+                    .catch(
+                        () => undefined,
+                    );
+            }
+        }
+
+        await page.waitForTimeout(
+            300,
+        );
+
+        return details;
+    } catch (error) {
+        crawlerLog.warning(
+            'Could not open/parse BPOM product detail.',
+            {
+                error:
+                    error?.message
+                    || String(error),
+            },
+        );
+
+        await page.keyboard
+            .press('Escape')
+            .catch(
+                () => undefined,
+            );
+
+        return {};
+    }
+}
 
 async function getProductTable(page) {
     const tables = page
