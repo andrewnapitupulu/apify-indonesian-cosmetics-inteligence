@@ -1,142 +1,360 @@
 {
   "actorSpecification": 1,
-  "title": "Cosmetics intelligence results",
-  "description": "Normalized BPOM cosmetics registry records and change events.",
+  "title": "Indonesian Cosmetics Intelligence Dataset",
+  "description": "Normalized BPOM cosmetics registry data, product details, and change-detection events.",
+
   "fields": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
+
     "properties": {
       "eventType": {
         "type": "string",
-        "title": "Event",
-        "description": "NEW, CHANGED, or UNCHANGED compared with the previous snapshot."
+        "title": "Event Type",
+        "description": "Change-detection classification of the record, such as NEW, CHANGED, UNCHANGED, or SNAPSHOT."
       },
+
+      "productType": {
+        "type": "string",
+        "title": "Product Type",
+        "description": "Product type code returned by BPOM, for example KO for cosmetics."
+      },
+
       "registrationNumber": {
         "type": "string",
-        "title": "BPOM Registration Number"
+        "title": "Registration Number",
+        "description": "BPOM registration number or Nomor Izin Edar (NIE)."
       },
-      "productName": {
-        "type": "string",
-        "title": "Product Name"
-      },
-      "brand": {
-        "type": "string",
-        "title": "Brand"
-      },
-      "registrant": {
-        "type": "string",
-        "title": "Registrant"
-      },
-      "packaging": {
-        "type": "string",
-        "title": "Packaging"
-      },
-      "dosageForm": {
-        "type": "string",
-        "title": "Form"
-      },
-      "composition": {
-        "type": "string",
-        "title": "Composition"
-      },
-      "applicationDate": {
-        "type": "string",
-        "title": "Application Date"
-      },
+
       "issuedDate": {
         "type": "string",
-        "title": "Issued Date"
+        "title": "Issued Date",
+        "description": "Date the BPOM product registration was issued."
       },
+
+      "productName": {
+        "type": "string",
+        "title": "Product Name",
+        "description": "Registered product name as published by BPOM."
+      },
+
+      "brand": {
+        "type": "string",
+        "title": "Brand",
+        "description": "Product brand or trademark."
+      },
+
+      "packaging": {
+        "type": "string",
+        "title": "Packaging",
+        "description": "Registered packaging information published by BPOM."
+      },
+
+      "composition": {
+        "type": "string",
+        "title": "Composition",
+        "description": "Composition information displayed in the BPOM product detail."
+      },
+
+      "dosageForm": {
+        "type": "string",
+        "title": "Dosage Form",
+        "description": "Dosage or product form when provided by BPOM."
+      },
+
+      "applicationDate": {
+        "type": "string",
+        "title": "Application Date",
+        "description": "Registration application date when provided by BPOM."
+      },
+
       "expiryDate": {
         "type": "string",
-        "title": "Expiry Date"
+        "title": "Expiry Date",
+        "description": "Registration expiry date when provided by BPOM."
       },
+
       "status": {
         "type": "string",
-        "title": "Status"
+        "title": "Status",
+        "description": "Registration status when provided by BPOM."
       },
+
+      "registrant": {
+        "type": "string",
+        "title": "Registrant",
+        "description": "Company or entity registered as the BPOM product registrant."
+      },
+
+      "registrantLocation": {
+        "type": "string",
+        "title": "Registrant Location",
+        "description": "Location of the product registrant as displayed in the BPOM listing."
+      },
+
+      "cosmeticsManufacturer": {
+        "type": "string",
+        "title": "Cosmetics Manufacturer",
+        "description": "Cosmetics manufacturer or Industri Kosmetika shown in the BPOM product detail."
+      },
+
+      "kits": {
+        "type": "string",
+        "title": "Kits",
+        "description": "Kit information provided in the BPOM product detail."
+      },
+
+      "issuedBy": {
+        "type": "string",
+        "title": "Issued By",
+        "description": "BPOM organizational unit responsible for issuing the registration."
+      },
+
+      "category": {
+        "type": "string",
+        "title": "Category",
+        "description": "Normalized product category. For this Actor the value is Kosmetika."
+      },
+
+      "source": {
+        "type": "string",
+        "title": "Source",
+        "description": "Original data source."
+      },
+
       "sourceUrl": {
         "type": "string",
-        "title": "Source URL"
+        "title": "Source URL",
+        "description": "URL of the BPOM cosmetics registry used as the source."
       },
+
       "matchedBy": {
         "type": "object",
-        "title": "Matched By"
+        "title": "Matched By",
+        "description": "Input query that caused this record to be collected.",
+
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+
+          "value": {
+            "type": "string"
+          }
+        },
+
+        "additionalProperties": true
       },
+
+      "matches": {
+        "type": "array",
+        "title": "Matches",
+        "description": "Multiple watchlist queries that matched the same registration.",
+
+        "items": {
+          "type": "object",
+
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+
+            "value": {
+              "type": "string"
+            }
+          },
+
+          "additionalProperties": true
+        }
+      },
+
+      "scrapedAt": {
+        "type": "string",
+        "title": "Scraped At",
+        "description": "Timestamp when the product was retrieved from BPOM."
+      },
+
       "detectedAt": {
         "type": "string",
-        "title": "Detected At"
+        "title": "Detected At",
+        "description": "Timestamp when the Actor classified the record."
       },
+
       "changedFields": {
         "type": "array",
         "title": "Changed Fields",
+        "description": "Fields detected as changed compared with the previous stored snapshot.",
+
         "items": {
           "type": "string"
         }
       },
+
       "previous": {
         "type": "object",
-        "title": "Previous Values"
+        "title": "Previous Record",
+        "description": "Previous version of the record when eventType is CHANGED.",
+        "additionalProperties": true
       }
     },
+
     "required": [
       "eventType",
       "registrationNumber",
       "productName",
+      "brand",
       "registrant",
+      "category",
+      "source",
       "sourceUrl",
+      "matchedBy",
+      "scrapedAt",
       "detectedAt"
-    ]
+    ],
+
+    "additionalProperties": true
   },
+
   "views": {
     "overview": {
-      "title": "Cosmetics intelligence",
+      "title": "Overview",
+      "description": "Main cosmetics intelligence fields for browsing BPOM products.",
+
       "transformation": {
         "fields": [
           "eventType",
           "registrationNumber",
+          "issuedDate",
           "productName",
           "brand",
           "registrant",
-          "issuedDate",
-          "expiryDate",
-          "status",
+          "cosmeticsManufacturer",
+          "packaging",
+          "composition",
+          "registrantLocation",
+          "kits",
+          "issuedBy",
+          "category",
           "matchedBy",
-          "detectedAt"
+          "detectedAt",
+          "sourceUrl"
         ]
       },
+
       "display": {
         "component": "table",
+
         "properties": {
           "eventType": {
             "label": "Event"
           },
+
           "registrationNumber": {
-            "label": "BPOM NIE"
+            "label": "BPOM Registration"
           },
+
+          "issuedDate": {
+            "label": "Issued Date"
+          },
+
           "productName": {
             "label": "Product"
           },
+
           "brand": {
             "label": "Brand"
           },
+
           "registrant": {
             "label": "Registrant"
           },
-          "issuedDate": {
-            "label": "Issued"
+
+          "cosmeticsManufacturer": {
+            "label": "Manufacturer"
           },
-          "expiryDate": {
-            "label": "Expiry"
+
+          "packaging": {
+            "label": "Packaging"
           },
-          "status": {
-            "label": "Status"
+
+          "composition": {
+            "label": "Composition"
           },
+
+          "registrantLocation": {
+            "label": "Registrant Location"
+          },
+
+          "kits": {
+            "label": "Kits"
+          },
+
+          "issuedBy": {
+            "label": "Issued By"
+          },
+
+          "category": {
+            "label": "Category"
+          },
+
           "matchedBy": {
-            "label": "Matched by"
+            "label": "Matched By"
           },
+
           "detectedAt": {
-            "label": "Detected at"
+            "label": "Detected At"
+          },
+
+          "sourceUrl": {
+            "label": "BPOM Source",
+            "format": "link"
+          }
+        }
+      }
+    },
+
+    "fullDetails": {
+      "title": "Full Details",
+      "description": "Complete normalized BPOM record including technical and change-detection fields.",
+
+      "transformation": {
+        "fields": [
+          "eventType",
+          "productType",
+          "registrationNumber",
+          "issuedDate",
+          "productName",
+          "brand",
+          "packaging",
+          "composition",
+          "dosageForm",
+          "applicationDate",
+          "expiryDate",
+          "status",
+          "registrant",
+          "registrantLocation",
+          "cosmeticsManufacturer",
+          "kits",
+          "issuedBy",
+          "category",
+          "source",
+          "sourceUrl",
+          "matchedBy",
+          "matches",
+          "scrapedAt",
+          "detectedAt",
+          "changedFields",
+          "previous"
+        ]
+      },
+
+      "display": {
+        "component": "table",
+
+        "properties": {
+          "sourceUrl": {
+            "label": "BPOM Source",
+            "format": "link"
           }
         }
       }
