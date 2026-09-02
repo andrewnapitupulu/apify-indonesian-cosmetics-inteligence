@@ -247,28 +247,44 @@ async function waitForTable(page) {
 
     await page.waitForFunction(
         () => {
-            const table = document.querySelector(
-                'table',
-            );
+            const tables = [
+                ...document.querySelectorAll('table'),
+            ];
 
-            if (!table) {
-                return false;
-            }
-
-            const body = table.querySelector(
-                'tbody',
-            );
-
-            if (!body) {
-                return true;
-            }
-
-            return (
-                body.querySelectorAll('tr').length > 0
-                || /tidak|data|kosong/i.test(
-                    body.textContent || '',
+            return tables.some((table) => {
+                const headers = (
+                    table.querySelector('thead')?.textContent
+                    || ''
                 )
-            );
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                const isProductTable =
+                    /Nomor Registrasi/i.test(headers)
+                    && /Nama Produk/i.test(headers);
+
+                if (!isProductTable) {
+                    return false;
+                }
+
+                const rows =
+                    table.querySelectorAll('tbody tr');
+
+                if (rows.length > 0) {
+                    return true;
+                }
+
+                const bodyText = (
+                    table.querySelector('tbody')?.textContent
+                    || ''
+                )
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                return /tidak ada data|no data|data kosong/i.test(
+                    bodyText,
+                );
+            });
         },
         {
             timeout: 30000,
@@ -518,16 +534,51 @@ async function enrichFromRow(
     }
 }
 
-function getProductTable(page) {
-    return page
+async function getProductTable(page) {
+    const tables = page
         .locator('table')
         .filter({
             hasText: /Nomor Registrasi/i,
         })
         .filter({
             hasText: /Nama Produk/i,
-        })
-        .first();
+        });
+
+    const tableCount = await tables.count();
+
+    let fallbackTable = null;
+
+    for (let i = 0; i < tableCount; i++) {
+        const table = tables.nth(i);
+
+        const isVisible = await table
+            .isVisible()
+            .catch(() => false);
+
+        if (!isVisible) {
+            continue;
+        }
+
+        if (!fallbackTable) {
+            fallbackTable = table;
+        }
+
+        const rowCount = await table
+            .locator('tbody tr')
+            .count();
+
+        if (rowCount > 0) {
+            return table;
+        }
+    }
+
+    if (fallbackTable) {
+        return fallbackTable;
+    }
+
+    throw new Error(
+        'BPOM product result table was not found.',
+    );
 }
 
 async function pageDiagnostics(page) {
@@ -741,7 +792,7 @@ async function extractCurrentPage(
     } = options;
 
     const table =
-        getProductTable(page);
+        await getProductTable(page);
 
     const rows =
         table.locator(
