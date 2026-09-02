@@ -9,6 +9,143 @@ const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const isoNow = () => new Date().toISOString();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function textLines(value) {
+    return String(value ?? '')
+        .split(/\r?\n/)
+        .map((line) => clean(line))
+        .filter(Boolean);
+}
+
+function parseRegistrationCell(value) {
+    const text = clean(value);
+
+    const registrationNumber =
+        text.match(/\b[A-Z]{2,3}\d{8,}\b/i)?.[0]
+        || '';
+
+    const issuedDate =
+        text.match(
+            /Terbit\s*:\s*(\d{4}-\d{2}-\d{2})/i,
+        )?.[1]
+        || '';
+
+    return {
+        registrationNumber,
+        issuedDate,
+    };
+}
+
+function parseProductCell(value) {
+    const lines = textLines(value);
+
+    let brand = '';
+    let packaging = '';
+
+    const productNameLines = [];
+
+    for (const line of lines) {
+        if (/^Merk\s*:/i.test(line)) {
+            brand = clean(
+                line.replace(
+                    /^Merk\s*:/i,
+                    '',
+                ),
+            );
+
+            continue;
+        }
+
+        if (/^Merek\s*:/i.test(line)) {
+            brand = clean(
+                line.replace(
+                    /^Merek\s*:/i,
+                    '',
+                ),
+            );
+
+            continue;
+        }
+
+        if (/^Kemasan\s*:/i.test(line)) {
+            packaging = clean(
+                line.replace(
+                    /^Kemasan\s*:/i,
+                    '',
+                ),
+            );
+
+            continue;
+        }
+
+        productNameLines.push(line);
+    }
+
+    /*
+     * Fallback jika BPOM tidak memberikan line-break yang jelas.
+     */
+    const fullText = clean(value);
+
+    if (!brand) {
+        brand = fullText.match(
+            /Merk\s*:\s*(.*?)(?=Kemasan\s*:|$)/i,
+        )?.[1]?.trim() || '';
+    }
+
+    if (!packaging) {
+        packaging = fullText.match(
+            /Kemasan\s*:\s*(.*)$/i,
+        )?.[1]?.trim() || '';
+    }
+
+    let productName =
+        clean(
+            productNameLines.join(' '),
+        );
+
+    /*
+     * Hilangkan metadata jika semuanya tergabung
+     * dalam satu baris.
+     */
+    productName = productName
+        .replace(
+            /Merk\s*:.*$/i,
+            '',
+        )
+        .replace(
+            /Merek\s*:.*$/i,
+            '',
+        );
+
+    return {
+        productName: clean(productName),
+        brand: clean(brand),
+        packaging: clean(packaging),
+    };
+}
+
+function parseRegistrantCell(value) {
+    const lines = textLines(value);
+
+    if (lines.length >= 2) {
+        return {
+            registrant: clean(
+                lines[0],
+            ),
+
+            registrantLocation: clean(
+                lines
+                    .slice(1)
+                    .join(' '),
+            ),
+        };
+    }
+
+    return {
+        registrant: clean(value),
+        registrantLocation: '',
+    };
+}
+
 function stableHash(record) {
     const fields = [
         'registrationNumber', 'productName', 'brand', 'registrant', 'packaging',
@@ -814,45 +951,66 @@ async function extractCurrentPage(
         const row =
             rows.nth(i);
 
-        const cells = (
-            await row
-                .locator('td')
-                .allTextContents()
-        )
-            .map(clean)
-            .filter(Boolean);
+        const cells = await row
+    .locator('td')
+    .allInnerTexts();
 
-        if (
-            cells.length < 3
-        ) {
-            continue;
-        }
+if (cells.length < 3) {
+    continue;
+}
 
-        if (
-            /tidak ada data|no data|data tidak/i.test(
-                cells.join(' '),
-            )
-        ) {
-            continue;
-        }
+const normalizedCells =
+    cells.map((value) => clean(value));
 
-        const listRecord = {
-            productType:
-                cells[0]
-                || 'KO',
+if (
+    /tidak ada data|no data|data tidak/i.test(
+        normalizedCells.join(' '),
+    )
+) {
+    continue;
+}
 
-            registrationNumber:
-                cells[1]
-                || '',
+const registration =
+    parseRegistrationCell(
+        cells[1] || '',
+    );
 
-            productName:
-                cells[2]
-                || '',
+const product =
+    parseProductCell(
+        cells[2] || '',
+    );
 
-            registrant:
-                cells[3]
-                || '',
-        };
+const registrant =
+    parseRegistrantCell(
+        cells[3] || '',
+    );
+
+const listRecord = {
+    productType:
+        clean(cells[0])
+        || 'KO',
+
+    registrationNumber:
+        registration.registrationNumber,
+
+    issuedDate:
+        registration.issuedDate,
+
+    productName:
+        product.productName,
+
+    brand:
+        product.brand,
+
+    packaging:
+        product.packaging,
+
+    registrant:
+        registrant.registrant,
+
+    registrantLocation:
+        registrant.registrantLocation,
+};
 
         const detail =
             includeDetails
@@ -865,55 +1023,78 @@ async function extractCurrentPage(
                 : {};
 
         const record = {
-            ...listRecord,
+    ...listRecord,
 
-            ...Object.fromEntries(
-                Object.entries(
-                    detail,
-                ).filter(
-                    ([, value]) =>
-                        clean(value),
-                ),
-            ),
+    ...Object.fromEntries(
+        Object.entries(
+            detail,
+        ).filter(
+            ([, value]) =>
+                clean(value),
+        ),
+    ),
 
-            registrationNumber:
-                clean(
-                    detail.registrationNumber
-                    || listRecord.registrationNumber,
-                ),
+    registrationNumber:
+        clean(
+            detail.registrationNumber
+            || listRecord.registrationNumber,
+        ),
 
-            productName:
-                clean(
-                    detail.productName
-                    || listRecord.productName,
-                ),
+    productName:
+        clean(
+            detail.productName
+            || listRecord.productName,
+        ),
 
-            registrant:
-                clean(
-                    detail.registrant
-                    || listRecord.registrant,
-                ),
+    brand:
+        clean(
+            detail.brand
+            || listRecord.brand,
+        ),
 
-            category:
-                'Kosmetika',
+    packaging:
+        clean(
+            detail.packaging
+            || listRecord.packaging,
+        ),
 
-            source:
-                'BPOM RI - Cek Produk',
+    issuedDate:
+        clean(
+            detail.issuedDate
+            || listRecord.issuedDate,
+        ),
 
-            sourceUrl:
-                BASE_URL,
+    registrant:
+        clean(
+            detail.registrant
+            || listRecord.registrant,
+        ),
 
-            matchedBy: {
-                type:
-                    job.kind,
+    registrantLocation:
+        clean(
+            listRecord.registrantLocation,
+        ),
 
-                value:
-                    job.value,
-            },
+    category:
+        'Kosmetika',
 
-            scrapedAt:
-                isoNow(),
-        };
+    source:
+        'BPOM RI - Cek Produk',
+
+    sourceUrl:
+        BASE_URL,
+
+    matchedBy: {
+        type:
+            job.kind,
+
+        value:
+            job.value,
+    },
+
+    scrapedAt:
+        isoNow(),
+};
 
         if (
             !record.registrationNumber
