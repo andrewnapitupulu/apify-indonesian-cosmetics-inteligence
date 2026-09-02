@@ -1,0 +1,18 @@
+{
+  "actorSpecification": 1,
+  "name": "indonesian-cosmetics-intelligence",
+  "title": "Indonesian Cosmetics Intelligence",
+  "description": "Monitor targeted BPOM cosmetics registry records and detect new or changed products across runs.",
+  "version": "0.1",
+  "buildTag": "latest",
+  "meta": {
+    "generatedBy": "ChatGPT GPT-5.6 Sol"
+  },
+  "dockerfile": "../Dockerfile",
+  "readme": "../README.md",
+  "input": "./input_schema.json",
+  "output": "./output_schema.json",
+  "storages": {
+    "dataset": "./dataset_schema.json"
+  }
+}
