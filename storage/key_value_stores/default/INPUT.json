@@ -1,0 +1,16 @@
+{
+  "brands": ["SOMETHINC", "SKINTIFIC"],
+  "registrants": [],
+  "productNames": [],
+  "registrationNumbers": [],
+  "compositions": [],
+  "maxItemsPerQuery": 50,
+  "maxPagesPerQuery": 10,
+  "includeDetails": true,
+  "detectChanges": true,
+  "emit": "all",
+  "stateStoreName": "indonesian-cosmetics-intelligence-state",
+  "stateKey": "demo-watchlist",
+  "requestDelayMs": 500,
+  "debug": false
+}
