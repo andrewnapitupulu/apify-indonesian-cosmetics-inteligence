@@ -613,6 +613,50 @@ async function enrichFromRow(
             await getVisibleDialog(page);
 
         if (!dialog) {
+            const pageInfo = await page.evaluate(() => {
+        return {
+            url: window.location.href,
+
+            visibleModals: [
+                ...document.querySelectorAll(
+                    '.modal, [role="dialog"]'
+                ),
+            ].map((el) => ({
+                className: el.className,
+                role: el.getAttribute('role'),
+                text: (el.innerText || '')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .slice(0, 1000),
+            })),
+
+            links: [
+                ...document.querySelectorAll('a'),
+            ]
+                .map((el) => ({
+                    text: (el.innerText || '')
+                        .replace(/\s+/g, ' ')
+                        .trim(),
+                    href: el.href,
+                }))
+                .filter((item) =>
+                    item.text || item.href
+                )
+                .slice(0, 50),
+
+            bodyPreview: (
+                document.body?.innerText || ''
+            )
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 3000),
+        };
+    });
+
+    crawlerLog.debug(
+        'Product detail dialog was not detected.',
+        pageInfo,
+    );
             return {};
         }
 
