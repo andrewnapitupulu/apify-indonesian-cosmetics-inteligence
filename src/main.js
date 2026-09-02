@@ -433,117 +433,320 @@ async function extractDetailPairs(dialog) {
     return dialog.evaluate((root) => {
         const result = {};
 
-        const put = (key, value) => {
-            const k = String(key || '')
-                .replace(/\s+/g, ' ')
-                .replace(/:$/, '')
+        const cleanText = (value) =>
+            String(value ?? '')
+                .replace(/\u00a0/g, ' ')
+                .replace(/[ \t]+/g, ' ')
                 .trim();
 
-            const v = String(value || '')
-                .replace(/\s+/g, ' ')
-                .trim();
+        const normalizeLabel = (value) =>
+            cleanText(value)
+                .replace(/:$/, '')
+                .toLowerCase();
+
+        const knownLabels = [
+            'Nomor Registrasi',
+            'Nomor Izin Edar',
+            'NIE',
+            'Nama Produk',
+            'Merk',
+            'Merek',
+            'Kemasan',
+            'Bentuk Sediaan',
+            'Komposisi',
+            'Tanggal Permohonan',
+            'Tanggal Terbit',
+            'Tanggal Expired',
+            'Tanggal Kedaluwarsa',
+            'Nama Pendaftar',
+            'Pendaftar',
+            'Status',
+        ];
+
+        const normalizedKnownLabels =
+            new Map(
+                knownLabels.map((label) => [
+                    normalizeLabel(label),
+                    label,
+                ]),
+            );
+
+        const put = (key, value) => {
+            const k = cleanText(key)
+                .replace(/:$/, '');
+
+            const v = cleanText(value);
 
             if (
-                k
-                && v
-                && k !== v
-                && !result[k]
+                !k
+                || !v
+                || k === v
             ) {
+                return;
+            }
+
+            if (!result[k]) {
                 result[k] = v;
             }
         };
 
+        /*
+         * Strategy 1:
+         * table / tr / td / th
+         */
         root
             .querySelectorAll('tr')
             .forEach((tr) => {
                 const cells = [
                     ...tr.querySelectorAll(
-                        'th,td',
+                        ':scope > th, :scope > td',
                     ),
                 ]
-                    .map(
-                        (el) => el.textContent?.trim() || '',
-                    )
+                    .map((el) =>
+                        cleanText(
+                            el.innerText
+                            || el.textContent,
+                        ))
                     .filter(Boolean);
 
                 if (cells.length >= 2) {
                     put(
                         cells[0],
-                        cells.slice(1).join(' '),
+                        cells
+                            .slice(1)
+                            .join(' '),
                     );
                 }
             });
 
+        /*
+         * Strategy 2:
+         * definition list
+         */
         root
             .querySelectorAll('dt')
             .forEach((dt) => {
-                const dd = dt.nextElementSibling;
+                let sibling =
+                    dt.nextElementSibling;
 
-                if (
-                    dd?.tagName?.toLowerCase()
-                    === 'dd'
+                while (
+                    sibling
+                    && sibling.tagName
+                        ?.toLowerCase()
+                        !== 'dd'
                 ) {
+                    sibling =
+                        sibling.nextElementSibling;
+                }
+
+                if (sibling) {
                     put(
-                        dt.textContent,
-                        dd.textContent,
+                        dt.innerText,
+                        sibling.innerText,
                     );
                 }
             });
 
+        /*
+         * Strategy 3:
+         * label + nearby value
+         */
         root
             .querySelectorAll('label')
             .forEach((label) => {
-                const container =
-                    label.parentElement;
+                const key =
+                    cleanText(
+                        label.innerText
+                        || label.textContent,
+                    );
 
-                if (!container) {
-                    return;
+                let value = '';
+
+                /*
+                 * Try sibling first.
+                 */
+                let sibling =
+                    label.nextElementSibling;
+
+                while (
+                    sibling
+                    && !value
+                ) {
+                    value =
+                        cleanText(
+                            sibling.innerText
+                            || sibling.textContent
+                            || sibling.value,
+                        );
+
+                    sibling =
+                        sibling.nextElementSibling;
                 }
 
-                const value = [
-                    ...container.children,
-                ]
-                    .filter(
-                        (el) => el !== label,
-                    )
-                    .map(
-                        (el) =>
-                            el.textContent?.trim()
-                            || el.getAttribute?.('value')
-                            || '',
-                    )
-                    .filter(Boolean)
-                    .join(' ');
+                /*
+                 * Try parent container.
+                 */
+                if (!value) {
+                    const parent =
+                        label.parentElement;
 
-                put(
-                    label.textContent,
-                    value,
-                );
+                    if (parent) {
+                        const parentText =
+                            cleanText(
+                                parent.innerText,
+                            );
+
+                        value =
+                            cleanText(
+                                parentText
+                                    .replace(
+                                        key,
+                                        '',
+                                    ),
+                            );
+                    }
+                }
+
+                put(key, value);
             });
 
-        root
-            .querySelectorAll('.row')
-            .forEach((row) => {
-                const children = [
-                    ...row.children,
-                ]
-                    .map(
-                        (el) =>
-                            el.textContent?.trim()
-                            || '',
-                    )
-                    .filter(Boolean);
+        /*
+         * Strategy 4:
+         * Parse modal based on text lines.
+         *
+         * This is important because BPOM may render
+         * labels and values in nested Bootstrap divs.
+         */
+        const rawText =
+            root.innerText
+            || root.textContent
+            || '';
+
+        const lines =
+            rawText
+                .split(/\r?\n/)
+                .map(cleanText)
+                .filter(Boolean)
+                .filter(
+                    (line) =>
+                        !/^Detail Produk$/i.test(
+                            line,
+                        )
+                        && !/^Close$/i.test(
+                            line,
+                        )
+                        && line !== '×',
+                );
+
+        for (
+            let i = 0;
+            i < lines.length;
+            i++
+        ) {
+            const line =
+                lines[i];
+
+            /*
+             * Case:
+             * "Merk: SOMETHINC"
+             */
+            const colonMatch =
+                line.match(
+                    /^([^:]{2,50})\s*:\s*(.+)$/,
+                );
+
+            if (colonMatch) {
+                const possibleLabel =
+                    normalizeLabel(
+                        colonMatch[1],
+                    );
 
                 if (
-                    children.length === 2
-                    && children[0].length < 80
+                    normalizedKnownLabels
+                        .has(possibleLabel)
                 ) {
                     put(
-                        children[0],
-                        children[1],
+                        normalizedKnownLabels
+                            .get(possibleLabel),
+                        colonMatch[2],
                     );
+
+                    continue;
                 }
-            });
+            }
+
+            /*
+             * Case:
+             *
+             * Merk
+             * SOMETHINC
+             */
+            const normalizedLine =
+                normalizeLabel(line);
+
+            const canonicalLabel =
+                normalizedKnownLabels
+                    .get(normalizedLine);
+
+            if (!canonicalLabel) {
+                continue;
+            }
+
+            const values = [];
+
+            for (
+                let j = i + 1;
+                j < lines.length;
+                j++
+            ) {
+                const candidate =
+                    lines[j];
+
+                const candidateNormalized =
+                    normalizeLabel(
+                        candidate,
+                    );
+
+                if (
+                    normalizedKnownLabels
+                        .has(candidateNormalized)
+                ) {
+                    break;
+                }
+
+                /*
+                 * Also stop if the next line is
+                 * "Some Label: value".
+                 */
+                const nextColon =
+                    candidate.match(
+                        /^([^:]{2,50})\s*:/,
+                    );
+
+                if (
+                    nextColon
+                    && normalizedKnownLabels
+                        .has(
+                            normalizeLabel(
+                                nextColon[1],
+                            ),
+                        )
+                ) {
+                    break;
+                }
+
+                values.push(
+                    candidate,
+                );
+            }
+
+            if (values.length) {
+                put(
+                    canonicalLabel,
+                    values.join(' '),
+                );
+            }
+        }
 
         return result;
     });
@@ -582,138 +785,6 @@ async function getVisibleDialog(page) {
 }
 
 async function enrichFromRow(
-    page,
-    row,
-    requestDelayMs,
-    crawlerLog,
-) {
-    const clickable =
-        row.locator('a,button');
-
-    const clickableCount =
-        await clickable.count();
-
-    try {
-        if (clickableCount > 0) {
-            await clickable
-                .last()
-                .click();
-        } else {
-            await row.click();
-        }
-
-        await sleep(
-            Math.max(
-                250,
-                requestDelayMs,
-            ),
-        );
-
-        const dialog =
-            await getVisibleDialog(page);
-
-        if (!dialog) {
-            const pageInfo = await page.evaluate(() => {
-        return {
-            url: window.location.href,
-
-            visibleModals: [
-                ...document.querySelectorAll(
-                    '.modal, [role="dialog"]'
-                ),
-            ].map((el) => ({
-                className: el.className,
-                role: el.getAttribute('role'),
-                text: (el.innerText || '')
-                    .replace(/\s+/g, ' ')
-                    .trim()
-                    .slice(0, 1000),
-            })),
-
-            links: [
-                ...document.querySelectorAll('a'),
-            ]
-                .map((el) => ({
-                    text: (el.innerText || '')
-                        .replace(/\s+/g, ' ')
-                        .trim(),
-                    href: el.href,
-                }))
-                .filter((item) =>
-                    item.text || item.href
-                )
-                .slice(0, 50),
-
-            bodyPreview: (
-                document.body?.innerText || ''
-            )
-                .replace(/\s+/g, ' ')
-                .trim()
-                .slice(0, 3000),
-        };
-    });
-
-    crawlerLog.debug(
-        'Product detail dialog was not detected.',
-        pageInfo,
-    );
-            return {};
-        }
-
-        const rawPairs =
-            await extractDetailPairs(
-                dialog,
-            );
-
-        const details =
-            mapDetails(rawPairs);
-
-        const closeButton =
-            await visibleLocator(
-                dialog.getByRole(
-                    'button',
-                    {
-                        name: /^(Close|Tutup)$/i,
-                    },
-                ),
-            );
-
-        if (closeButton) {
-            await closeButton
-                .click()
-                .catch(
-                    () => undefined,
-                );
-        } else {
-            await page.keyboard
-                .press('Escape')
-                .catch(
-                    () => undefined,
-                );
-        }
-
-        await sleep(
-            Math.min(
-                requestDelayMs,
-                500,
-            ),
-        );
-
-        return details;
-    } catch (error) {
-        crawlerLog.debug(
-            `Could not open/parse product detail: ${error.message}`,
-        );
-
-        await page.keyboard
-            .press('Escape')
-            .catch(
-                () => undefined,
-            );
-
-        return {};
-    }
-}
 
 async function getProductTable(page) {
     const tables = page
