@@ -1,0 +1,145 @@
+{
+  "actorSpecification": 1,
+  "title": "Cosmetics intelligence results",
+  "description": "Normalized BPOM cosmetics registry records and change events.",
+  "fields": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "eventType": {
+        "type": "string",
+        "title": "Event",
+        "description": "NEW, CHANGED, or UNCHANGED compared with the previous snapshot."
+      },
+      "registrationNumber": {
+        "type": "string",
+        "title": "BPOM Registration Number"
+      },
+      "productName": {
+        "type": "string",
+        "title": "Product Name"
+      },
+      "brand": {
+        "type": "string",
+        "title": "Brand"
+      },
+      "registrant": {
+        "type": "string",
+        "title": "Registrant"
+      },
+      "packaging": {
+        "type": "string",
+        "title": "Packaging"
+      },
+      "dosageForm": {
+        "type": "string",
+        "title": "Form"
+      },
+      "composition": {
+        "type": "string",
+        "title": "Composition"
+      },
+      "applicationDate": {
+        "type": "string",
+        "title": "Application Date"
+      },
+      "issuedDate": {
+        "type": "string",
+        "title": "Issued Date"
+      },
+      "expiryDate": {
+        "type": "string",
+        "title": "Expiry Date"
+      },
+      "status": {
+        "type": "string",
+        "title": "Status"
+      },
+      "sourceUrl": {
+        "type": "string",
+        "title": "Source URL"
+      },
+      "matchedBy": {
+        "type": "object",
+        "title": "Matched By"
+      },
+      "detectedAt": {
+        "type": "string",
+        "title": "Detected At"
+      },
+      "changedFields": {
+        "type": "array",
+        "title": "Changed Fields",
+        "items": {
+          "type": "string"
+        }
+      },
+      "previous": {
+        "type": "object",
+        "title": "Previous Values"
+      }
+    },
+    "required": [
+      "eventType",
+      "registrationNumber",
+      "productName",
+      "registrant",
+      "sourceUrl",
+      "detectedAt"
+    ]
+  },
+  "views": {
+    "overview": {
+      "title": "Cosmetics intelligence",
+      "transformation": {
+        "fields": [
+          "eventType",
+          "registrationNumber",
+          "productName",
+          "brand",
+          "registrant",
+          "issuedDate",
+          "expiryDate",
+          "status",
+          "matchedBy",
+          "detectedAt"
+        ]
+      },
+      "display": {
+        "component": "table",
+        "properties": {
+          "eventType": {
+            "label": "Event"
+          },
+          "registrationNumber": {
+            "label": "BPOM NIE"
+          },
+          "productName": {
+            "label": "Product"
+          },
+          "brand": {
+            "label": "Brand"
+          },
+          "registrant": {
+            "label": "Registrant"
+          },
+          "issuedDate": {
+            "label": "Issued"
+          },
+          "expiryDate": {
+            "label": "Expiry"
+          },
+          "status": {
+            "label": "Status"
+          },
+          "matchedBy": {
+            "label": "Matched by"
+          },
+          "detectedAt": {
+            "label": "Detected at"
+          }
+        }
+      }
+    }
+  }
+}

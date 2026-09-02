@@ -1,0 +1,106 @@
+{
+  "title": "Indonesian Cosmetics Intelligence",
+  "description": "Monitor targeted cosmetics records in the public BPOM registry and optionally detect new or changed records across runs.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "brands": {
+      "title": "Brands to monitor",
+      "type": "array",
+      "description": "One or more cosmetics brands to search in the BPOM registry. Each brand is queried separately.",
+      "editor": "stringList",
+      "default": ["SOMETHINC"]
+    },
+    "registrants": {
+      "title": "Registrants / companies",
+      "type": "array",
+      "description": "Optional BPOM registrant/company names to monitor.",
+      "editor": "stringList",
+      "default": []
+    },
+    "productNames": {
+      "title": "Product names",
+      "type": "array",
+      "description": "Optional product-name searches.",
+      "editor": "stringList",
+      "default": []
+    },
+    "registrationNumbers": {
+      "title": "Registration numbers (NIE)",
+      "type": "array",
+      "description": "Optional exact or partial BPOM registration numbers.",
+      "editor": "stringList",
+      "default": []
+    },
+    "compositions": {
+      "title": "Composition keywords",
+      "type": "array",
+      "description": "Optional composition/ingredient keywords supported by the BPOM filter.",
+      "editor": "stringList",
+      "default": []
+    },
+    "maxItemsPerQuery": {
+      "title": "Maximum results per query",
+      "type": "integer",
+      "description": "Safety and cost limit for each brand/company/product/filter query.",
+      "minimum": 1,
+      "maximum": 2000,
+      "default": 100
+    },
+    "maxPagesPerQuery": {
+      "title": "Maximum pages per query",
+      "type": "integer",
+      "description": "Maximum BPOM pagination pages visited for each query.",
+      "minimum": 1,
+      "maximum": 200,
+      "default": 20
+    },
+    "includeDetails": {
+      "title": "Open product details",
+      "type": "boolean",
+      "description": "Attempt to open the BPOM product detail modal for richer fields. This is slower and more sensitive to UI changes.",
+      "default": true
+    },
+    "detectChanges": {
+      "title": "Detect changes across runs",
+      "type": "boolean",
+      "description": "Compare current records with a persistent snapshot stored in a named Key-Value Store.",
+      "default": true
+    },
+    "emit": {
+      "title": "Records to output",
+      "type": "string",
+      "description": "all = every current record; changes = NEW or CHANGED only; new = only NEW records.",
+      "editor": "select",
+      "enum": ["all", "changes", "new"],
+      "enumTitles": ["All records", "New + changed only", "New only"],
+      "default": "all"
+    },
+    "stateStoreName": {
+      "title": "State store name",
+      "type": "string",
+      "description": "Named Apify Key-Value Store used to persist fingerprints between runs.",
+      "default": "indonesian-cosmetics-intelligence-state"
+    },
+    "stateKey": {
+      "title": "Watchlist state key",
+      "type": "string",
+      "description": "Use a different key for independent monitoring watchlists.",
+      "default": "default"
+    },
+    "requestDelayMs": {
+      "title": "Delay between interactions (ms)",
+      "type": "integer",
+      "description": "Small delay used to reduce request pressure on the public source.",
+      "minimum": 0,
+      "maximum": 10000,
+      "default": 500
+    },
+    "debug": {
+      "title": "Save debug artifacts",
+      "type": "boolean",
+      "description": "Save HTML and screenshots to the default Key-Value Store if a query cannot be parsed.",
+      "default": false
+    }
+  }
+}
