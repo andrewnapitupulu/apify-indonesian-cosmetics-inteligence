@@ -77,17 +77,19 @@
       "default": "all"
     },
     "stateStoreName": {
-      "title": "State store name",
-      "type": "string",
-      "description": "Named Apify Key-Value Store used to persist fingerprints between runs.",
-      "default": "indonesian-cosmetics-intelligence-state"
-    },
-    "stateKey": {
-      "title": "Watchlist state key",
-      "type": "string",
-      "description": "Use a different key for independent monitoring watchlists.",
-      "default": "default"
-    },
+  "title": "State store name",
+  "type": "string",
+  "description": "Named Apify Key-Value Store used to persist fingerprints between runs.",
+  "default": "indonesian-cosmetics-intelligence-state",
+  "editor": "textfield"
+},
+"stateKey": {
+  "title": "Watchlist state key",
+  "type": "string",
+  "description": "Use a different key for independent monitoring watchlists.",
+  "default": "default",
+  "editor": "textfield"
+},
     "requestDelayMs": {
       "title": "Delay between interactions (ms)",
       "type": "integer",
