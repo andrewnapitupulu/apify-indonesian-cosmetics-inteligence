@@ -165,46 +165,114 @@ function normalizeKey(label) {
 
 function mapDetails(rawPairs = {}) {
     const normalized = Object.fromEntries(
-        Object.entries(rawPairs).map(([key, value]) => [normalizeKey(key), clean(value)]),
+        Object.entries(rawPairs).map(
+            ([key, value]) => [
+                normalizeKey(key),
+                clean(value),
+            ],
+        ),
     );
 
     const pick = (...candidates) => {
         for (const candidate of candidates) {
-            const target = normalizeKey(candidate);
+            const target =
+                normalizeKey(candidate);
 
-            if (normalized[target]) return normalized[target];
+            if (normalized[target]) {
+                return normalized[target];
+            }
 
-            const fuzzy = Object.entries(normalized)
-                .find(([key]) => key.includes(target) || target.includes(key));
+            const fuzzy =
+                Object.entries(normalized)
+                    .find(
+                        ([key]) =>
+                            key.includes(target)
+                            || target.includes(key),
+                    );
 
-            if (fuzzy?.[1]) return fuzzy[1];
+            if (fuzzy?.[1]) {
+                return fuzzy[1];
+            }
         }
 
         return '';
     };
 
     return {
-        registrationNumber: pick(
-            'nomor registrasi',
-            'nomor izin edar',
-            'nie',
-        ),
-        productName: pick('nama produk'),
-        brand: pick('merk', 'merek'),
-        packaging: pick('kemasan'),
-        dosageForm: pick('bentuk sediaan'),
-        composition: pick('komposisi'),
-        applicationDate: pick('tanggal permohonan'),
-        issuedDate: pick('tanggal terbit'),
-        expiryDate: pick(
-            'tanggal expired',
-            'tanggal kedaluwarsa',
-        ),
-        registrant: pick(
-            'nama pendaftar',
-            'pendaftar',
-        ),
-        status: pick('status'),
+        registrationNumber:
+            pick(
+                'nomor registrasi',
+                'nomor izin edar',
+                'nie',
+            ),
+
+        productName:
+            pick(
+                'nama produk',
+            ),
+
+        brand:
+            pick(
+                'merk',
+                'merek',
+            ),
+
+        packaging:
+            pick(
+                'kemasan',
+            ),
+
+        dosageForm:
+            pick(
+                'bentuk sediaan',
+            ),
+
+        composition:
+            pick(
+                'komposisi',
+            ),
+
+        applicationDate:
+            pick(
+                'tanggal permohonan',
+            ),
+
+        issuedDate:
+            pick(
+                'tanggal terbit',
+            ),
+
+        expiryDate:
+            pick(
+                'tanggal expired',
+                'tanggal kedaluwarsa',
+            ),
+
+        registrant:
+            pick(
+                'nama pendaftar',
+                'pendaftar',
+            ),
+
+        cosmeticsManufacturer:
+            pick(
+                'industri kosmetika',
+            ),
+
+        kits:
+            pick(
+                'kits',
+            ),
+
+        issuedBy:
+            pick(
+                'diterbitkan oleh',
+            ),
+
+        status:
+            pick(
+                'status',
+            ),
     };
 }
 
@@ -445,23 +513,28 @@ async function extractDetailPairs(dialog) {
                 .toLowerCase();
 
         const knownLabels = [
-            'Nomor Registrasi',
-            'Nomor Izin Edar',
-            'NIE',
-            'Nama Produk',
-            'Merk',
-            'Merek',
-            'Kemasan',
-            'Bentuk Sediaan',
-            'Komposisi',
-            'Tanggal Permohonan',
-            'Tanggal Terbit',
-            'Tanggal Expired',
-            'Tanggal Kedaluwarsa',
-            'Nama Pendaftar',
-            'Pendaftar',
-            'Status',
-        ];
+    'Nomor Registrasi',
+    'Nomor Izin Edar',
+    'NIE',
+    'Nama Produk',
+    'Merk',
+    'Merek',
+    'Kemasan',
+    'Bentuk Sediaan',
+    'Komposisi',
+    'Tanggal Permohonan',
+    'Tanggal Terbit',
+    'Tanggal Expired',
+    'Tanggal Kedaluwarsa',
+    'Nama Pendaftar',
+    'Pendaftar',
+
+    'Industri Kosmetika',
+    'Kits',
+    'Diterbitkan Oleh',
+
+    'Status',
+];
 
         const normalizedKnownLabels =
             new Map(
@@ -1468,6 +1541,11 @@ const listRecord = {
             || listRecord.issuedDate,
         ),
 
+    composition:
+        clean(
+            detail.composition,
+        ),
+
     registrant:
         clean(
             detail.registrant
@@ -1477,6 +1555,21 @@ const listRecord = {
     registrantLocation:
         clean(
             listRecord.registrantLocation,
+        ),
+
+    cosmeticsManufacturer:
+        clean(
+            detail.cosmeticsManufacturer,
+        ),
+
+    kits:
+        clean(
+            detail.kits,
+        ),
+
+    issuedBy:
+        clean(
+            detail.issuedBy,
         ),
 
     category:
