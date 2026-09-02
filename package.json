@@ -1,0 +1,19 @@
+{
+  "name": "indonesian-cosmetics-intelligence",
+  "version": "0.1.0",
+  "description": "Apify Actor for targeted BPOM cosmetics registry intelligence and change detection.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "start:prod": "node src/main.js",
+    "check": "node --check src/main.js"
+  },
+  "dependencies": {
+    "apify": "^3.4.0",
+    "crawlee": "^3.14.0",
+    "playwright": "*"
+  }
+}
