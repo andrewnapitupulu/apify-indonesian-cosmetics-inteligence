@@ -24,9 +24,7 @@ function parseRegistrationCell(value) {
         || '';
 
     const issuedDate =
-        text.match(
-            /Terbit\s*:\s*(\d{4}-\d{2}-\d{2})/i,
-        )?.[1]
+        text.match(/Terbit\s*:\s*(\d{4}-\d{2}-\d{2})/i)?.[1]
         || '';
 
     return {
@@ -40,49 +38,27 @@ function parseProductCell(value) {
 
     let brand = '';
     let packaging = '';
-
     const productNameLines = [];
 
     for (const line of lines) {
         if (/^Merk\s*:/i.test(line)) {
-            brand = clean(
-                line.replace(
-                    /^Merk\s*:/i,
-                    '',
-                ),
-            );
-
+            brand = clean(line.replace(/^Merk\s*:/i, ''));
             continue;
         }
 
         if (/^Merek\s*:/i.test(line)) {
-            brand = clean(
-                line.replace(
-                    /^Merek\s*:/i,
-                    '',
-                ),
-            );
-
+            brand = clean(line.replace(/^Merek\s*:/i, ''));
             continue;
         }
 
         if (/^Kemasan\s*:/i.test(line)) {
-            packaging = clean(
-                line.replace(
-                    /^Kemasan\s*:/i,
-                    '',
-                ),
-            );
-
+            packaging = clean(line.replace(/^Kemasan\s*:/i, ''));
             continue;
         }
 
         productNameLines.push(line);
     }
 
-    /*
-     * Fallback jika BPOM tidak memberikan line-break yang jelas.
-     */
     const fullText = clean(value);
 
     if (!brand) {
@@ -97,24 +73,13 @@ function parseProductCell(value) {
         )?.[1]?.trim() || '';
     }
 
-    let productName =
-        clean(
-            productNameLines.join(' '),
-        );
+    let productName = clean(
+        productNameLines.join(' '),
+    );
 
-    /*
-     * Hilangkan metadata jika semuanya tergabung
-     * dalam satu baris.
-     */
     productName = productName
-        .replace(
-            /Merk\s*:.*$/i,
-            '',
-        )
-        .replace(
-            /Merek\s*:.*$/i,
-            '',
-        );
+        .replace(/Merk\s*:.*$/i, '')
+        .replace(/Merek\s*:.*$/i, '');
 
     return {
         productName: clean(productName),
@@ -128,14 +93,10 @@ function parseRegistrantCell(value) {
 
     if (lines.length >= 2) {
         return {
-            registrant: clean(
-                lines[0],
-            ),
+            registrant: clean(lines[0]),
 
             registrantLocation: clean(
-                lines
-                    .slice(1)
-                    .join(' '),
+                lines.slice(1).join(' '),
             ),
         };
     }
@@ -148,11 +109,36 @@ function parseRegistrantCell(value) {
 
 function stableHash(record) {
     const fields = [
-        'registrationNumber', 'productName', 'brand', 'registrant', 'packaging',
-        'dosageForm', 'composition', 'applicationDate', 'issuedDate', 'expiryDate', 'status',
+        'registrationNumber',
+        'productName',
+        'brand',
+        'registrant',
+        'registrantLocation',
+        'cosmeticsManufacturer',
+        'packaging',
+        'composition',
+        'kits',
+        'issuedBy',
+        'dosageForm',
+        'applicationDate',
+        'issuedDate',
+        'expiryDate',
+        'status',
     ];
-    const payload = Object.fromEntries(fields.map((key) => [key, clean(record[key])]));
-    return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+
+    const payload = Object.fromEntries(
+        fields.map(
+            (key) => [
+                key,
+                clean(record[key]),
+            ],
+        ),
+    );
+
+    return crypto
+        .createHash('sha256')
+        .update(JSON.stringify(payload))
+        .digest('hex');
 }
 
 function normalizeKey(label) {
@@ -207,9 +193,7 @@ function mapDetails(rawPairs = {}) {
             ),
 
         productName:
-            pick(
-                'nama produk',
-            ),
+            pick('nama produk'),
 
         brand:
             pick(
@@ -218,29 +202,19 @@ function mapDetails(rawPairs = {}) {
             ),
 
         packaging:
-            pick(
-                'kemasan',
-            ),
+            pick('kemasan'),
 
         dosageForm:
-            pick(
-                'bentuk sediaan',
-            ),
+            pick('bentuk sediaan'),
 
         composition:
-            pick(
-                'komposisi',
-            ),
+            pick('komposisi'),
 
         applicationDate:
-            pick(
-                'tanggal permohonan',
-            ),
+            pick('tanggal permohonan'),
 
         issuedDate:
-            pick(
-                'tanggal terbit',
-            ),
+            pick('tanggal terbit'),
 
         expiryDate:
             pick(
@@ -255,31 +229,26 @@ function mapDetails(rawPairs = {}) {
             ),
 
         cosmeticsManufacturer:
-            pick(
-                'industri kosmetika',
-            ),
+            pick('industri kosmetika'),
 
         kits:
-            pick(
-                'kits',
-            ),
+            pick('kits'),
 
         issuedBy:
-            pick(
-                'diterbitkan oleh',
-            ),
+            pick('diterbitkan oleh'),
 
         status:
-            pick(
-                'status',
-            ),
+            pick('status'),
     };
 }
 
 function buildJobs(input) {
     const jobs = [];
 
-    const add = (kind, values = []) => {
+    const add = (
+        kind,
+        values = [],
+    ) => {
         for (const raw of values || []) {
             const value = clean(raw);
 
@@ -292,11 +261,30 @@ function buildJobs(input) {
         }
     };
 
-    add('brand', input.brands);
-    add('registrant', input.registrants);
-    add('productName', input.productNames);
-    add('registrationNumber', input.registrationNumbers);
-    add('composition', input.compositions);
+    add(
+        'brand',
+        input.brands,
+    );
+
+    add(
+        'registrant',
+        input.registrants,
+    );
+
+    add(
+        'productName',
+        input.productNames,
+    );
+
+    add(
+        'registrationNumber',
+        input.registrationNumbers,
+    );
+
+    add(
+        'composition',
+        input.compositions,
+    );
 
     if (!jobs.length) {
         jobs.push({
@@ -310,21 +298,42 @@ function buildJobs(input) {
 
 function inputPlaceholderFor(kind) {
     return {
-        registrationNumber: 'Masukkan Nomor Registrasi',
-        productName: 'Masukkan Nama Produk',
-        brand: 'Masukkan Merk',
-        composition: 'Masukkan Komposisi',
-        registrant: 'Masukkan Nama Pendaftar',
+        registrationNumber:
+            'Masukkan Nomor Registrasi',
+
+        productName:
+            'Masukkan Nama Produk',
+
+        brand:
+            'Masukkan Merk',
+
+        composition:
+            'Masukkan Komposisi',
+
+        registrant:
+            'Masukkan Nama Pendaftar',
     }[kind];
 }
 
 async function visibleLocator(locator) {
-    const count = await locator.count();
+    const count =
+        await locator.count();
 
-    for (let i = count - 1; i >= 0; i--) {
-        const item = locator.nth(i);
+    for (
+        let i = count - 1;
+        i >= 0;
+        i--
+    ) {
+        const item =
+            locator.nth(i);
 
-        if (await item.isVisible().catch(() => false)) {
+        if (
+            await item
+                .isVisible()
+                .catch(
+                    () => false,
+                )
+        ) {
             return item;
         }
     }
@@ -342,12 +351,16 @@ async function applyFilter(
         return;
     }
 
-    const openFilter = await visibleLocator(
-        page.getByRole(
-            'button',
-            { name: /^Filter$/i },
-        ),
-    );
+    const openFilter =
+        await visibleLocator(
+            page.getByRole(
+                'button',
+                {
+                    name:
+                        /^Filter$/i,
+                },
+            ),
+        );
 
     if (!openFilter) {
         throw new Error(
@@ -356,9 +369,15 @@ async function applyFilter(
     }
 
     await openFilter.click();
-    await sleep(requestDelayMs);
 
-    const placeholder = inputPlaceholderFor(job.kind);
+    await sleep(
+        requestDelayMs,
+    );
+
+    const placeholder =
+        inputPlaceholderFor(
+            job.kind,
+        );
 
     if (!placeholder) {
         throw new Error(
@@ -366,11 +385,12 @@ async function applyFilter(
         );
     }
 
-    const field = await visibleLocator(
-        page.locator(
-            `input[placeholder="${placeholder}"]`,
-        ),
-    );
+    const field =
+        await visibleLocator(
+            page.locator(
+                `input[placeholder="${placeholder}"]`,
+            ),
+        );
 
     if (!field) {
         throw new Error(
@@ -378,14 +398,20 @@ async function applyFilter(
         );
     }
 
-    await field.fill(job.value);
-
-    const applyFilterButton = await visibleLocator(
-        page.getByRole(
-            'button',
-            { name: /^Filter$/i },
-        ),
+    await field.fill(
+        job.value,
     );
+
+    const applyFilterButton =
+        await visibleLocator(
+            page.getByRole(
+                'button',
+                {
+                    name:
+                        /^Filter$/i,
+                },
+            ),
+        );
 
     if (!applyFilterButton) {
         throw new Error(
@@ -393,13 +419,18 @@ async function applyFilter(
         );
     }
 
-    const before = clean(
-        await page
-            .locator('table tbody')
-            .first()
-            .innerText()
-            .catch(() => ''),
-    );
+    const before =
+        clean(
+            await page
+                .locator(
+                    'table tbody',
+                )
+                .first()
+                .innerText()
+                .catch(
+                    () => '',
+                ),
+        );
 
     await applyFilterButton.click();
 
@@ -412,425 +443,553 @@ async function applyFilter(
 
     await page.waitForFunction(
         (previous) => {
-            const body = document.querySelector(
-                'table tbody',
-            );
+            const tables = [
+                ...document.querySelectorAll(
+                    'table',
+                ),
+            ];
 
-            if (!body) {
-                return false;
+            for (const table of tables) {
+                const headers =
+                    (
+                        table
+                            .querySelector(
+                                'thead',
+                            )
+                            ?.textContent
+                        || ''
+                    )
+                        .replace(
+                            /\s+/g,
+                            ' ',
+                        )
+                        .trim();
+
+                if (
+                    !/Nomor Registrasi/i
+                        .test(headers)
+                    || !/Nama Produk/i
+                        .test(headers)
+                ) {
+                    continue;
+                }
+
+                const body =
+                    table.querySelector(
+                        'tbody',
+                    );
+
+                if (!body) {
+                    continue;
+                }
+
+                const current =
+                    (
+                        body.textContent
+                        || ''
+                    )
+                        .replace(
+                            /\s+/g,
+                            ' ',
+                        )
+                        .trim();
+
+                if (
+                    current
+                        !== previous
+                    || current.length
+                        > 0
+                ) {
+                    return true;
+                }
             }
 
-            const current = (
-                body.textContent || ''
-            )
-                .replace(/\s+/g, ' ')
-                .trim();
-
-            return (
-                current !== previous
-                || current.length > 0
-            );
+            return false;
         },
         before,
         {
-            timeout: 20000,
+            timeout:
+                20000,
         },
-    ).catch(() => {
-        crawlerLog.debug(
-            'Table text did not visibly change after applying filter; continuing.',
-        );
-    });
+    ).catch(
+        () => {
+            crawlerLog.debug(
+                'Table text did not visibly change after applying filter; continuing.',
+            );
+        },
+    );
 }
 
 async function waitForTable(page) {
     await page.waitForSelector(
         'table',
         {
-            timeout: 30000,
+            timeout:
+                30000,
         },
     );
 
     await page.waitForFunction(
         () => {
             const tables = [
-                ...document.querySelectorAll('table'),
+                ...document.querySelectorAll(
+                    'table',
+                ),
             ];
 
-            return tables.some((table) => {
-                const headers = (
-                    table.querySelector('thead')?.textContent
-                    || ''
-                )
-                    .replace(/\s+/g, ' ')
-                    .trim();
+            return tables.some(
+                (table) => {
+                    const headers =
+                        (
+                            table
+                                .querySelector(
+                                    'thead',
+                                )
+                                ?.textContent
+                            || ''
+                        )
+                            .replace(
+                                /\s+/g,
+                                ' ',
+                            )
+                            .trim();
 
-                const isProductTable =
-                    /Nomor Registrasi/i.test(headers)
-                    && /Nama Produk/i.test(headers);
+                    const isProductTable =
+                        /Nomor Registrasi/i
+                            .test(headers)
+                        && /Nama Produk/i
+                            .test(headers);
 
-                if (!isProductTable) {
-                    return false;
-                }
+                    if (!isProductTable) {
+                        return false;
+                    }
 
-                const rows =
-                    table.querySelectorAll('tbody tr');
+                    const rows =
+                        table
+                            .querySelectorAll(
+                                'tbody tr',
+                            );
 
-                if (rows.length > 0) {
-                    return true;
-                }
+                    if (
+                        rows.length > 0
+                    ) {
+                        return true;
+                    }
 
-                const bodyText = (
-                    table.querySelector('tbody')?.textContent
-                    || ''
-                )
-                    .replace(/\s+/g, ' ')
-                    .trim();
+                    const bodyText =
+                        (
+                            table
+                                .querySelector(
+                                    'tbody',
+                                )
+                                ?.textContent
+                            || ''
+                        )
+                            .replace(
+                                /\s+/g,
+                                ' ',
+                            )
+                            .trim();
 
-                return /tidak ada data|no data|data kosong/i.test(
-                    bodyText,
-                );
-            });
+                    return (
+                        /tidak ada data|no data|data kosong/i
+                            .test(
+                                bodyText,
+                            )
+                    );
+                },
+            );
         },
         {
-            timeout: 30000,
+            timeout:
+                30000,
         },
-    ).catch(() => undefined);
+    ).catch(
+        () => undefined,
+    );
 }
 
-async function extractDetailPairs(dialog) {
-    return dialog.evaluate((root) => {
-        const result = {};
+async function extractDetailPairs(
+    dialog,
+) {
+    return dialog.evaluate(
+        (root) => {
+            const result = {};
 
-        const cleanText = (value) =>
-            String(value ?? '')
-                .replace(/\u00a0/g, ' ')
-                .replace(/[ \t]+/g, ' ')
-                .trim();
+            const cleanText =
+                (value) =>
+                    String(
+                        value ?? '',
+                    )
+                        .replace(
+                            /\u00a0/g,
+                            ' ',
+                        )
+                        .replace(
+                            /[ \t]+/g,
+                            ' ',
+                        )
+                        .trim();
 
-        const normalizeLabel = (value) =>
-            cleanText(value)
-                .replace(/:$/, '')
-                .toLowerCase();
+            const normalizeLabel =
+                (value) =>
+                    cleanText(value)
+                        .replace(
+                            /:$/,
+                            '',
+                        )
+                        .toLowerCase();
 
-        const knownLabels = [
-    'Nomor Registrasi',
-    'Nomor Izin Edar',
-    'NIE',
-    'Nama Produk',
-    'Merk',
-    'Merek',
-    'Kemasan',
-    'Bentuk Sediaan',
-    'Komposisi',
-    'Tanggal Permohonan',
-    'Tanggal Terbit',
-    'Tanggal Expired',
-    'Tanggal Kedaluwarsa',
-    'Nama Pendaftar',
-    'Pendaftar',
+            const knownLabels = [
+                'Nomor Registrasi',
+                'Nomor Izin Edar',
+                'NIE',
+                'Nama Produk',
+                'Merk',
+                'Merek',
+                'Kemasan',
+                'Bentuk Sediaan',
+                'Komposisi',
+                'Tanggal Permohonan',
+                'Tanggal Terbit',
+                'Tanggal Expired',
+                'Tanggal Kedaluwarsa',
+                'Nama Pendaftar',
+                'Pendaftar',
+                'Industri Kosmetika',
+                'Kits',
+                'Diterbitkan Oleh',
+                'Status',
+            ];
 
-    'Industri Kosmetika',
-    'Kits',
-    'Diterbitkan Oleh',
-
-    'Status',
-];
-
-        const normalizedKnownLabels =
-            new Map(
-                knownLabels.map((label) => [
-                    normalizeLabel(label),
-                    label,
-                ]),
-            );
-
-        const put = (key, value) => {
-            const k = cleanText(key)
-                .replace(/:$/, '');
-
-            const v = cleanText(value);
-
-            if (
-                !k
-                || !v
-                || k === v
-            ) {
-                return;
-            }
-
-            if (!result[k]) {
-                result[k] = v;
-            }
-        };
-
-        /*
-         * Strategy 1:
-         * table / tr / td / th
-         */
-        root
-            .querySelectorAll('tr')
-            .forEach((tr) => {
-                const cells = [
-                    ...tr.querySelectorAll(
-                        ':scope > th, :scope > td',
+            const normalizedKnownLabels =
+                new Map(
+                    knownLabels.map(
+                        (label) => [
+                            normalizeLabel(
+                                label,
+                            ),
+                            label,
+                        ],
                     ),
-                ]
-                    .map((el) =>
-                        cleanText(
-                            el.innerText
-                            || el.textContent,
-                        ))
-                    .filter(Boolean);
+                );
 
-                if (cells.length >= 2) {
-                    put(
-                        cells[0],
-                        cells
-                            .slice(1)
-                            .join(' '),
-                    );
-                }
-            });
-
-        /*
-         * Strategy 2:
-         * definition list
-         */
-        root
-            .querySelectorAll('dt')
-            .forEach((dt) => {
-                let sibling =
-                    dt.nextElementSibling;
-
-                while (
-                    sibling
-                    && sibling.tagName
-                        ?.toLowerCase()
-                        !== 'dd'
-                ) {
-                    sibling =
-                        sibling.nextElementSibling;
-                }
-
-                if (sibling) {
-                    put(
-                        dt.innerText,
-                        sibling.innerText,
-                    );
-                }
-            });
-
-        /*
-         * Strategy 3:
-         * label + nearby value
-         */
-        root
-            .querySelectorAll('label')
-            .forEach((label) => {
-                const key =
-                    cleanText(
-                        label.innerText
-                        || label.textContent,
-                    );
-
-                let value = '';
-
-                /*
-                 * Try sibling first.
-                 */
-                let sibling =
-                    label.nextElementSibling;
-
-                while (
-                    sibling
-                    && !value
-                ) {
-                    value =
-                        cleanText(
-                            sibling.innerText
-                            || sibling.textContent
-                            || sibling.value,
+            const put = (
+                key,
+                value,
+            ) => {
+                const k =
+                    cleanText(key)
+                        .replace(
+                            /:$/,
+                            '',
                         );
 
-                    sibling =
-                        sibling.nextElementSibling;
+                const v =
+                    cleanText(value);
+
+                if (
+                    !k
+                    || !v
+                    || k === v
+                ) {
+                    return;
                 }
 
-                /*
-                 * Try parent container.
-                 */
-                if (!value) {
-                    const parent =
-                        label.parentElement;
+                if (!result[k]) {
+                    result[k] = v;
+                }
+            };
 
-                    if (parent) {
-                        const parentText =
-                            cleanText(
-                                parent.innerText,
+            root
+                .querySelectorAll(
+                    'tr',
+                )
+                .forEach(
+                    (tr) => {
+                        const cells = [
+                            ...tr
+                                .querySelectorAll(
+                                    ':scope > th, :scope > td',
+                                ),
+                        ]
+                            .map(
+                                (el) =>
+                                    cleanText(
+                                        el.innerText
+                                        || el.textContent,
+                                    ),
+                            )
+                            .filter(
+                                Boolean,
                             );
 
-                        value =
-                            cleanText(
-                                parentText
-                                    .replace(
-                                        key,
-                                        '',
+                        if (
+                            cells.length
+                                >= 2
+                        ) {
+                            put(
+                                cells[0],
+                                cells
+                                    .slice(1)
+                                    .join(
+                                        ' ',
                                     ),
                             );
+                        }
+                    },
+                );
+
+            root
+                .querySelectorAll(
+                    'dt',
+                )
+                .forEach(
+                    (dt) => {
+                        let sibling =
+                            dt
+                                .nextElementSibling;
+
+                        while (
+                            sibling
+                            && sibling
+                                .tagName
+                                ?.toLowerCase()
+                                !== 'dd'
+                        ) {
+                            sibling =
+                                sibling
+                                    .nextElementSibling;
+                        }
+
+                        if (sibling) {
+                            put(
+                                dt.innerText,
+                                sibling.innerText,
+                            );
+                        }
+                    },
+                );
+
+            root
+                .querySelectorAll(
+                    'label',
+                )
+                .forEach(
+                    (label) => {
+                        const key =
+                            cleanText(
+                                label.innerText
+                                || label.textContent,
+                            );
+
+                        let value = '';
+
+                        let sibling =
+                            label
+                                .nextElementSibling;
+
+                        while (
+                            sibling
+                            && !value
+                        ) {
+                            value =
+                                cleanText(
+                                    sibling.innerText
+                                    || sibling.textContent
+                                    || sibling.value,
+                                );
+
+                            sibling =
+                                sibling
+                                    .nextElementSibling;
+                        }
+
+                        if (!value) {
+                            const parent =
+                                label
+                                    .parentElement;
+
+                            if (parent) {
+                                const parentText =
+                                    cleanText(
+                                        parent
+                                            .innerText,
+                                    );
+
+                                value =
+                                    cleanText(
+                                        parentText
+                                            .replace(
+                                                key,
+                                                '',
+                                            ),
+                                    );
+                            }
+                        }
+
+                        put(
+                            key,
+                            value,
+                        );
+                    },
+                );
+
+            const rawText =
+                root.innerText
+                || root.textContent
+                || '';
+
+            const lines =
+                rawText
+                    .split(
+                        /\r?\n/,
+                    )
+                    .map(
+                        cleanText,
+                    )
+                    .filter(
+                        Boolean,
+                    )
+                    .filter(
+                        (line) =>
+                            !/^Detail Produk$/i
+                                .test(
+                                    line,
+                                )
+                            && !/^Close$/i
+                                .test(
+                                    line,
+                                )
+                            && line !== '×',
+                    );
+
+            for (
+                let i = 0;
+                i < lines.length;
+                i++
+            ) {
+                const line =
+                    lines[i];
+
+                const colonMatch =
+                    line.match(
+                        /^([^:]{2,50})\s*:\s*(.+)$/,
+                    );
+
+                if (colonMatch) {
+                    const possibleLabel =
+                        normalizeLabel(
+                            colonMatch[1],
+                        );
+
+                    if (
+                        normalizedKnownLabels
+                            .has(
+                                possibleLabel,
+                            )
+                    ) {
+                        put(
+                            normalizedKnownLabels
+                                .get(
+                                    possibleLabel,
+                                ),
+                            colonMatch[2],
+                        );
+
+                        continue;
                     }
                 }
 
-                put(key, value);
-            });
-
-        /*
-         * Strategy 4:
-         * Parse modal based on text lines.
-         *
-         * This is important because BPOM may render
-         * labels and values in nested Bootstrap divs.
-         */
-        const rawText =
-            root.innerText
-            || root.textContent
-            || '';
-
-        const lines =
-            rawText
-                .split(/\r?\n/)
-                .map(cleanText)
-                .filter(Boolean)
-                .filter(
-                    (line) =>
-                        !/^Detail Produk$/i.test(
-                            line,
-                        )
-                        && !/^Close$/i.test(
-                            line,
-                        )
-                        && line !== '×',
-                );
-
-        for (
-            let i = 0;
-            i < lines.length;
-            i++
-        ) {
-            const line =
-                lines[i];
-
-            /*
-             * Case:
-             * "Merk: SOMETHINC"
-             */
-            const colonMatch =
-                line.match(
-                    /^([^:]{2,50})\s*:\s*(.+)$/,
-                );
-
-            if (colonMatch) {
-                const possibleLabel =
+                const normalizedLine =
                     normalizeLabel(
-                        colonMatch[1],
+                        line,
                     );
 
-                if (
+                const canonicalLabel =
                     normalizedKnownLabels
-                        .has(possibleLabel)
-                ) {
-                    put(
-                        normalizedKnownLabels
-                            .get(possibleLabel),
-                        colonMatch[2],
-                    );
+                        .get(
+                            normalizedLine,
+                        );
 
+                if (!canonicalLabel) {
                     continue;
                 }
-            }
 
-            /*
-             * Case:
-             *
-             * Merk
-             * SOMETHINC
-             */
-            const normalizedLine =
-                normalizeLabel(line);
+                const values = [];
 
-            const canonicalLabel =
-                normalizedKnownLabels
-                    .get(normalizedLine);
+                for (
+                    let j = i + 1;
+                    j < lines.length;
+                    j++
+                ) {
+                    const candidate =
+                        lines[j];
 
-            if (!canonicalLabel) {
-                continue;
-            }
+                    const candidateNormalized =
+                        normalizeLabel(
+                            candidate,
+                        );
 
-            const values = [];
+                    if (
+                        normalizedKnownLabels
+                            .has(
+                                candidateNormalized,
+                            )
+                    ) {
+                        break;
+                    }
 
-            for (
-                let j = i + 1;
-                j < lines.length;
-                j++
-            ) {
-                const candidate =
-                    lines[j];
+                    const nextColon =
+                        candidate
+                            .match(
+                                /^([^:]{2,50})\s*:/,
+                            );
 
-                const candidateNormalized =
-                    normalizeLabel(
+                    if (
+                        nextColon
+                        && normalizedKnownLabels
+                            .has(
+                                normalizeLabel(
+                                    nextColon[1],
+                                ),
+                            )
+                    ) {
+                        break;
+                    }
+
+                    values.push(
                         candidate,
                     );
-
-                if (
-                    normalizedKnownLabels
-                        .has(candidateNormalized)
-                ) {
-                    break;
                 }
 
-                /*
-                 * Also stop if the next line is
-                 * "Some Label: value".
-                 */
-                const nextColon =
-                    candidate.match(
-                        /^([^:]{2,50})\s*:/,
+                if (
+                    values.length
+                ) {
+                    put(
+                        canonicalLabel,
+                        values.join(
+                            ' ',
+                        ),
                     );
-
-                if (
-                    nextColon
-                    && normalizedKnownLabels
-                        .has(
-                            normalizeLabel(
-                                nextColon[1],
-                            ),
-                        )
-                ) {
-                    break;
                 }
-
-                values.push(
-                    candidate,
-                );
             }
 
-            if (values.length) {
-                put(
-                    canonicalLabel,
-                    values.join(' '),
-                );
-            }
-        }
-
-        return result;
-    });
+            return result;
+        },
+    );
 }
 
-async function getVisibleDialog(page) {
-    const candidates = page.locator(
-        '.modal:visible, [role="dialog"]:visible',
-    );
+async function getVisibleDialog(
+    page,
+) {
+    const candidates =
+        page.locator(
+            '.modal:visible, [role="dialog"]:visible',
+        );
 
-    const count = await candidates.count();
+    const count =
+        await candidates.count();
 
     for (
         let i = count - 1;
@@ -840,14 +999,18 @@ async function getVisibleDialog(page) {
         const candidate =
             candidates.nth(i);
 
-        const text = clean(
-            await candidate
-                .innerText()
-                .catch(() => ''),
-        );
+        const text =
+            clean(
+                await candidate
+                    .innerText()
+                    .catch(
+                        () => '',
+                    ),
+            );
 
         if (
-            /detail produk/i.test(text)
+            /detail produk/i
+                .test(text)
             || text.length > 20
         ) {
             return candidate;
@@ -879,11 +1042,9 @@ async function enrichFromRow(
             },
         );
 
-        if (clickableCount > 0) {
-            /*
-             * Registration number / product row
-             * normally contains the detail trigger.
-             */
+        if (
+            clickableCount > 0
+        ) {
             await clickable
                 .first()
                 .click();
@@ -891,10 +1052,6 @@ async function enrichFromRow(
             await row.click();
         }
 
-        /*
-         * BPOM fills modal content dynamically,
-         * so give it some time after click.
-         */
         await page.waitForTimeout(
             Math.max(
                 800,
@@ -915,19 +1072,13 @@ async function enrichFromRow(
             return {};
         }
 
-        await dialog
-            .waitFor({
-                state: 'visible',
-                timeout: 10000,
-            })
-            .catch(
-                () => undefined,
-            );
+        await dialog.waitFor({
+            state: 'visible',
+            timeout: 10000,
+        }).catch(
+            () => undefined,
+        );
 
-        /*
-         * Wait until modal contains more
-         * than just its heading.
-         */
         await page.waitForFunction(
             () => {
                 const dialogs = [
@@ -943,9 +1094,10 @@ async function enrichFromRow(
                                 el.getBoundingClientRect();
 
                             const style =
-                                window.getComputedStyle(
-                                    el,
-                                );
+                                window
+                                    .getComputedStyle(
+                                        el,
+                                    );
 
                             return (
                                 rect.width > 0
@@ -973,10 +1125,13 @@ async function enrichFromRow(
                         )
                         .trim();
 
-                return text.length > 20;
+                return (
+                    text.length > 20
+                );
             },
             {
-                timeout: 10000,
+                timeout:
+                    10000,
             },
         ).catch(
             () => undefined,
@@ -995,10 +1150,11 @@ async function enrichFromRow(
             'BPOM product detail dialog detected.',
             {
                 textPreview:
-                    dialogText.slice(
-                        0,
-                        2000,
-                    ),
+                    dialogText
+                        .slice(
+                            0,
+                            2000,
+                        ),
             },
         );
 
@@ -1026,10 +1182,6 @@ async function enrichFromRow(
             },
         );
 
-        /*
-         * If nothing useful is extracted,
-         * save the modal HTML for diagnosis.
-         */
         const hasUsefulDetail =
             Boolean(
                 details.composition
@@ -1039,17 +1191,23 @@ async function enrichFromRow(
                 || details.applicationDate
                 || details.registrationNumber
                 || details.productName
-                || details.brand,
+                || details.brand
+                || details.cosmeticsManufacturer
+                || details.issuedBy,
             );
 
         if (!hasUsefulDetail) {
             const debugId =
                 crypto
-                    .createHash('md5')
+                    .createHash(
+                        'md5',
+                    )
                     .update(
                         `${Date.now()}-${dialogText}`,
                     )
-                    .digest('hex')
+                    .digest(
+                        'hex',
+                    )
                     .slice(
                         0,
                         12,
@@ -1061,6 +1219,7 @@ async function enrichFromRow(
                     dialogText,
                     rawPairs,
                     details,
+
                     html:
                         await dialog
                             .innerHTML()
@@ -1079,9 +1238,6 @@ async function enrichFromRow(
             );
         }
 
-        /*
-         * Close modal.
-         */
         const closeButton =
             await visibleLocator(
                 dialog.getByRole(
@@ -1116,7 +1272,9 @@ async function enrichFromRow(
                     );
             } else {
                 await page.keyboard
-                    .press('Escape')
+                    .press(
+                        'Escape',
+                    )
                     .catch(
                         () => undefined,
                     );
@@ -1139,7 +1297,9 @@ async function enrichFromRow(
         );
 
         await page.keyboard
-            .press('Escape')
+            .press(
+                'Escape',
+            )
             .catch(
                 () => undefined,
             );
@@ -1148,40 +1308,63 @@ async function enrichFromRow(
     }
 }
 
-async function getProductTable(page) {
-    const tables = page
-        .locator('table')
-        .filter({
-            hasText: /Nomor Registrasi/i,
-        })
-        .filter({
-            hasText: /Nama Produk/i,
-        });
+async function getProductTable(
+    page,
+) {
+    const tables =
+        page
+            .locator(
+                'table',
+            )
+            .filter({
+                hasText:
+                    /Nomor Registrasi/i,
+            })
+            .filter({
+                hasText:
+                    /Nama Produk/i,
+            });
 
-    const tableCount = await tables.count();
+    const tableCount =
+        await tables.count();
 
-    let fallbackTable = null;
+    let fallbackTable =
+        null;
 
-    for (let i = 0; i < tableCount; i++) {
-        const table = tables.nth(i);
+    for (
+        let i = 0;
+        i < tableCount;
+        i++
+    ) {
+        const table =
+            tables.nth(i);
 
-        const isVisible = await table
-            .isVisible()
-            .catch(() => false);
+        const isVisible =
+            await table
+                .isVisible()
+                .catch(
+                    () => false,
+                );
 
         if (!isVisible) {
             continue;
         }
 
         if (!fallbackTable) {
-            fallbackTable = table;
+            fallbackTable =
+                table;
         }
 
-        const rowCount = await table
-            .locator('tbody tr')
-            .count();
+        const rowCount =
+            await table
+                .locator(
+                    'tbody tr',
+                )
+                .count();
 
-        if (rowCount > 0) {
+        if (
+            rowCount > 0
+        ) {
             return table;
         }
     }
@@ -1195,7 +1378,9 @@ async function getProductTable(page) {
     );
 }
 
-async function pageDiagnostics(page) {
+async function pageDiagnostics(
+    page,
+) {
     return page.evaluate(
         () => ({
             url:
@@ -1208,22 +1393,29 @@ async function pageDiagnostics(page) {
                 document.readyState,
 
             tableCount:
-                document.querySelectorAll(
-                    'table',
-                ).length,
+                document
+                    .querySelectorAll(
+                        'table',
+                    )
+                    .length,
 
             tables: [
-                ...document.querySelectorAll(
-                    'table',
-                ),
+                ...document
+                    .querySelectorAll(
+                        'table',
+                    ),
             ].map(
-                (table, index) => ({
+                (
+                    table,
+                    index,
+                ) => ({
                     index,
 
                     headers: [
-                        ...table.querySelectorAll(
-                            'th',
-                        ),
+                        ...table
+                            .querySelectorAll(
+                                'th',
+                            ),
                     ].map(
                         (el) =>
                             (
@@ -1262,24 +1454,27 @@ async function pageDiagnostics(page) {
             ),
 
             visibleButtons: [
-                ...document.querySelectorAll(
-                    'button',
-                ),
+                ...document
+                    .querySelectorAll(
+                        'button',
+                    ),
             ]
-                .filter((el) => {
-                    const style =
-                        window
-                            .getComputedStyle(
-                                el,
-                            );
+                .filter(
+                    (el) => {
+                        const style =
+                            window
+                                .getComputedStyle(
+                                    el,
+                                );
 
-                    return (
-                        style.display
-                            !== 'none'
-                        && style.visibility
-                            !== 'hidden'
-                    );
-                })
+                        return (
+                            style.display
+                                !== 'none'
+                            && style.visibility
+                                !== 'hidden'
+                        );
+                    },
+                )
                 .map(
                     (el) =>
                         (
@@ -1292,7 +1487,9 @@ async function pageDiagnostics(page) {
                             )
                             .trim(),
                 )
-                .filter(Boolean)
+                .filter(
+                    Boolean,
+                )
                 .slice(
                     0,
                     30,
@@ -1323,23 +1520,30 @@ async function saveDebugArtifacts(
     stage,
     logInstance,
 ) {
-    const id = crypto
-        .createHash('md5')
-        .update(
-            `${job.kind}:${job.value}:${stage}`,
-        )
-        .digest('hex')
-        .slice(
-            0,
-            12,
-        );
+    const id =
+        crypto
+            .createHash(
+                'md5',
+            )
+            .update(
+                `${job.kind}:${job.value}:${stage}`,
+            )
+            .digest(
+                'hex',
+            )
+            .slice(
+                0,
+                12,
+            );
 
     const prefix =
         `DEBUG_${stage}_${id}`;
 
     try {
         const diagnostics =
-            await pageDiagnostics(page);
+            await pageDiagnostics(
+                page,
+            );
 
         await Actor.setValue(
             `${prefix}_DIAGNOSTICS`,
@@ -1360,7 +1564,8 @@ async function saveDebugArtifacts(
 
         const screenshot =
             await page.screenshot({
-                fullPage: true,
+                fullPage:
+                    true,
             });
 
         await Actor.setValue(
@@ -1376,10 +1581,12 @@ async function saveDebugArtifacts(
             `Saved debug artifacts with prefix ${prefix}.`,
             {
                 tableCount:
-                    diagnostics.tableCount,
+                    diagnostics
+                        .tableCount,
 
                 tables:
-                    diagnostics.tables,
+                    diagnostics
+                        .tables,
             },
         );
     } catch (error) {
@@ -1406,7 +1613,9 @@ async function extractCurrentPage(
     } = options;
 
     const table =
-        await getProductTable(page);
+        await getProductTable(
+            page,
+        );
 
     const rows =
         table.locator(
@@ -1428,66 +1637,88 @@ async function extractCurrentPage(
         const row =
             rows.nth(i);
 
-        const cells = await row
-    .locator('td')
-    .allInnerTexts();
+        const cells =
+            await row
+                .locator(
+                    'td',
+                )
+                .allInnerTexts();
 
-if (cells.length < 3) {
-    continue;
-}
+        if (
+            cells.length < 3
+        ) {
+            continue;
+        }
 
-const normalizedCells =
-    cells.map((value) => clean(value));
+        const normalizedCells =
+            cells.map(
+                (value) =>
+                    clean(value),
+            );
 
-if (
-    /tidak ada data|no data|data tidak/i.test(
-        normalizedCells.join(' '),
-    )
-) {
-    continue;
-}
+        if (
+            /tidak ada data|no data|data tidak/i
+                .test(
+                    normalizedCells
+                        .join(' '),
+                )
+        ) {
+            continue;
+        }
 
-const registration =
-    parseRegistrationCell(
-        cells[1] || '',
-    );
+        const registration =
+            parseRegistrationCell(
+                cells[1]
+                || '',
+            );
 
-const product =
-    parseProductCell(
-        cells[2] || '',
-    );
+        const product =
+            parseProductCell(
+                cells[2]
+                || '',
+            );
 
-const registrant =
-    parseRegistrantCell(
-        cells[3] || '',
-    );
+        const registrant =
+            parseRegistrantCell(
+                cells[3]
+                || '',
+            );
 
-const listRecord = {
-    productType:
-        clean(cells[0])
-        || 'KO',
+        const listRecord = {
+            productType:
+                clean(
+                    cells[0],
+                )
+                || 'KO',
 
-    registrationNumber:
-        registration.registrationNumber,
+            registrationNumber:
+                registration
+                    .registrationNumber,
 
-    issuedDate:
-        registration.issuedDate,
+            issuedDate:
+                registration
+                    .issuedDate,
 
-    productName:
-        product.productName,
+            productName:
+                product
+                    .productName,
 
-    brand:
-        product.brand,
+            brand:
+                product
+                    .brand,
 
-    packaging:
-        product.packaging,
+            packaging:
+                product
+                    .packaging,
 
-    registrant:
-        registrant.registrant,
+            registrant:
+                registrant
+                    .registrant,
 
-    registrantLocation:
-        registrant.registrantLocation,
-};
+            registrantLocation:
+                registrant
+                    .registrantLocation,
+        };
 
         const detail =
             includeDetails
@@ -1500,106 +1731,121 @@ const listRecord = {
                 : {};
 
         const record = {
-    ...listRecord,
+            ...listRecord,
 
-    ...Object.fromEntries(
-        Object.entries(
-            detail,
-        ).filter(
-            ([, value]) =>
-                clean(value),
-        ),
-    ),
+            ...Object.fromEntries(
+                Object.entries(
+                    detail,
+                ).filter(
+                    ([, value]) =>
+                        clean(value),
+                ),
+            ),
 
-    registrationNumber:
-        clean(
-            detail.registrationNumber
-            || listRecord.registrationNumber,
-        ),
+            registrationNumber:
+                clean(
+                    detail
+                        .registrationNumber
+                    || listRecord
+                        .registrationNumber,
+                ),
 
-    productName:
-        clean(
-            detail.productName
-            || listRecord.productName,
-        ),
+            productName:
+                clean(
+                    detail
+                        .productName
+                    || listRecord
+                        .productName,
+                ),
 
-    brand:
-        clean(
-            detail.brand
-            || listRecord.brand,
-        ),
+            brand:
+                clean(
+                    detail.brand
+                    || listRecord
+                        .brand,
+                ),
 
-    packaging:
-        clean(
-            detail.packaging
-            || listRecord.packaging,
-        ),
+            packaging:
+                clean(
+                    detail.packaging
+                    || listRecord
+                        .packaging,
+                ),
 
-    issuedDate:
-        clean(
-            detail.issuedDate
-            || listRecord.issuedDate,
-        ),
+            issuedDate:
+                clean(
+                    detail.issuedDate
+                    || listRecord
+                        .issuedDate,
+                ),
 
-    composition:
-        clean(
-            detail.composition,
-        ),
+            composition:
+                clean(
+                    detail
+                        .composition,
+                ),
 
-    registrant:
-        clean(
-            detail.registrant
-            || listRecord.registrant,
-        ),
+            registrant:
+                clean(
+                    detail.registrant
+                    || listRecord
+                        .registrant,
+                ),
 
-    registrantLocation:
-        clean(
-            listRecord.registrantLocation,
-        ),
+            registrantLocation:
+                clean(
+                    listRecord
+                        .registrantLocation,
+                ),
 
-    cosmeticsManufacturer:
-        clean(
-            detail.cosmeticsManufacturer,
-        ),
+            cosmeticsManufacturer:
+                clean(
+                    detail
+                        .cosmeticsManufacturer,
+                ),
 
-    kits:
-        clean(
-            detail.kits,
-        ),
+            kits:
+                clean(
+                    detail.kits,
+                ),
 
-    issuedBy:
-        clean(
-            detail.issuedBy,
-        ),
+            issuedBy:
+                clean(
+                    detail
+                        .issuedBy,
+                ),
 
-    category:
-        'Kosmetika',
+            category:
+                'Kosmetika',
 
-    source:
-        'BPOM RI - Cek Produk',
+            source:
+                'BPOM RI - Cek Produk',
 
-    sourceUrl:
-        BASE_URL,
+            sourceUrl:
+                BASE_URL,
 
-    matchedBy: {
-        type:
-            job.kind,
+            matchedBy: {
+                type:
+                    job.kind,
 
-        value:
-            job.value,
-    },
+                value:
+                    job.value,
+            },
 
-    scrapedAt:
-        isoNow(),
-};
+            scrapedAt:
+                isoNow(),
+        };
 
         if (
-            !record.registrationNumber
+            !record
+                .registrationNumber
         ) {
             continue;
         }
 
-        results.push(record);
+        results.push(
+            record,
+        );
     }
 
     return results;
@@ -1648,18 +1894,27 @@ async function clickNext(
         return false;
     }
 
-    const before =
-        clean(
-            await page
-                .locator(
-                    'table tbody tr',
-                )
-                .first()
-                .innerText()
-                .catch(
-                    () => '',
-                ),
+    const table =
+        await getProductTable(
+            page,
+        ).catch(
+            () => null,
         );
+
+    const before =
+        table
+            ? clean(
+                await table
+                    .locator(
+                        'tbody tr',
+                    )
+                    .first()
+                    .innerText()
+                    .catch(
+                        () => '',
+                    ),
+            )
+            : '';
 
     await next.click();
 
@@ -1674,29 +1929,75 @@ async function clickNext(
         await page
             .waitForFunction(
                 (previous) => {
-                    const first =
-                        document
-                            .querySelector(
-                                'table tbody tr',
-                            );
+                    const tables = [
+                        ...document
+                            .querySelectorAll(
+                                'table',
+                            ),
+                    ];
 
-                    const current =
-                        (
-                            first
-                                ?.textContent
-                            || ''
-                        )
-                            .replace(
-                                /\s+/g,
-                                ' ',
+                    for (
+                        const tableEl
+                        of tables
+                    ) {
+                        const headers =
+                            (
+                                tableEl
+                                    .querySelector(
+                                        'thead',
+                                    )
+                                    ?.textContent
+                                || ''
                             )
-                            .trim();
+                                .replace(
+                                    /\s+/g,
+                                    ' ',
+                                )
+                                .trim();
 
-                    return (
-                        Boolean(current)
-                        && current
-                            !== previous
-                    );
+                        if (
+                            !/Nomor Registrasi/i
+                                .test(
+                                    headers,
+                                )
+                            || !/Nama Produk/i
+                                .test(
+                                    headers,
+                                )
+                        ) {
+                            continue;
+                        }
+
+                        const first =
+                            tableEl
+                                .querySelector(
+                                    'tbody tr',
+                                );
+
+                        const current =
+                            (
+                                first
+                                    ?.textContent
+                                || ''
+                            )
+                                .replace(
+                                    /\s+/g,
+                                    ' ',
+                                )
+                                .trim();
+
+                        if (
+                            Boolean(
+                                current,
+                            )
+                            && current
+                                !== previous
+                        ) {
+                            return true;
+                        }
+                    }
+
+                    return false;
                 },
                 before,
                 {
@@ -1728,9 +2029,13 @@ function diffFields(
         'productName',
         'brand',
         'registrant',
+        'registrantLocation',
+        'cosmeticsManufacturer',
         'packaging',
-        'dosageForm',
         'composition',
+        'kits',
+        'issuedBy',
+        'dosageForm',
         'applicationDate',
         'issuedDate',
         'expiryDate',
@@ -1756,7 +2061,8 @@ function shouldEmit(
         mode === 'new'
     ) {
         return (
-            eventType === 'NEW'
+            eventType
+                === 'NEW'
         );
     }
 
@@ -1764,7 +2070,8 @@ function shouldEmit(
         mode === 'changes'
     ) {
         return (
-            eventType === 'NEW'
+            eventType
+                === 'NEW'
             || eventType
                 === 'CHANGED'
         );
@@ -1780,26 +2087,32 @@ await Actor.main(
             ?? {};
 
         const jobs =
-            buildJobs(input);
+            buildJobs(
+                input,
+            );
 
         const maxItemsPerQuery =
             Number(
-                input.maxItemsPerQuery
+                input
+                    .maxItemsPerQuery
                 ?? 100,
             );
 
         const maxPagesPerQuery =
             Number(
-                input.maxPagesPerQuery
+                input
+                    .maxPagesPerQuery
                 ?? 20,
             );
 
         const includeDetails =
-            input.includeDetails
+            input
+                .includeDetails
             !== false;
 
         const detectChanges =
-            input.detectChanges
+            input
+                .detectChanges
             !== false;
 
         const emit =
@@ -1808,7 +2121,8 @@ await Actor.main(
 
         const requestDelayMs =
             Number(
-                input.requestDelayMs
+                input
+                    .requestDelayMs
                 ?? 500,
             );
 
@@ -1850,7 +2164,8 @@ await Actor.main(
         const collected =
             new Map();
 
-        const failedJobs = [];
+        const failedJobs =
+            [];
 
         const crawler =
             new PlaywrightCrawler({
@@ -1858,13 +2173,13 @@ await Actor.main(
                     1,
 
                 requestHandlerTimeoutSecs:
-                    240,
+                    300,
 
                 navigationTimeoutSecs:
-                    60,
+                    90,
 
                 maxRequestRetries:
-                    2,
+                    5,
 
                 launchContext: {
                     launchOptions: {
@@ -1873,10 +2188,76 @@ await Actor.main(
                     },
                 },
 
+                preNavigationHooks: [
+                    async (
+                        {
+                            page,
+                            request,
+                            log:
+                                crawlerLog,
+                        },
+                        gotoOptions,
+                    ) => {
+                        const retryCount =
+                            request.retryCount
+                            ?? 0;
+
+                        if (
+                            retryCount > 0
+                        ) {
+                            const delayMs =
+                                Math.min(
+                                    15000,
+                                    2000
+                                        * (
+                                            2
+                                            ** (
+                                                retryCount
+                                                - 1
+                                            )
+                                        ),
+                                );
+
+                            crawlerLog.warning(
+                                `Retrying BPOM after ${delayMs} ms backoff.`,
+                                {
+                                    retryCount,
+                                },
+                            );
+
+                            await page
+                                .waitForTimeout(
+                                    delayMs,
+                                );
+                        }
+
+                        await page
+                            .setExtraHTTPHeaders({
+                                'Accept-Language':
+                                    'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+
+                                Accept:
+                                    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+
+                                'Upgrade-Insecure-Requests':
+                                    '1',
+                            });
+
+                        gotoOptions
+                            .waitUntil =
+                            'domcontentloaded';
+
+                        gotoOptions
+                            .timeout =
+                            90000;
+                    },
+                ],
+
                 async requestHandler({
                     page,
                     request,
-                    log: crawlerLog,
+                    log:
+                        crawlerLog,
                 }) {
                     const job =
                         request
@@ -1950,41 +2331,49 @@ await Actor.main(
                                 1;
 
                             const key =
-                                item.registrationNumber;
+                                item
+                                    .registrationNumber;
 
                             const existing =
-                                collected.get(
-                                    key,
-                                );
+                                collected
+                                    .get(
+                                        key,
+                                    );
 
                             if (!existing) {
-                                collected.set(
-                                    key,
-                                    item,
-                                );
+                                collected
+                                    .set(
+                                        key,
+                                        item,
+                                    );
                             } else {
                                 const matches =
                                     Array.isArray(
-                                        existing.matches,
+                                        existing
+                                            .matches,
                                     )
-                                        ? existing.matches
+                                        ? existing
+                                            .matches
                                         : [
-                                            existing.matchedBy,
+                                            existing
+                                                .matchedBy,
                                         ].filter(
                                             Boolean,
                                         );
 
                                 matches.push(
-                                    item.matchedBy,
+                                    item
+                                        .matchedBy,
                                 );
 
-                                collected.set(
-                                    key,
-                                    {
-                                        ...existing,
-                                        matches,
-                                    },
-                                );
+                                collected
+                                    .set(
+                                        key,
+                                        {
+                                            ...existing,
+                                            matches,
+                                        },
+                                    );
                             }
 
                             if (
@@ -2018,7 +2407,8 @@ await Actor.main(
                     }
 
                     if (
-                        queryCount === 0
+                        queryCount
+                            === 0
                         && debug
                     ) {
                         await saveDebugArtifacts(
@@ -2037,7 +2427,8 @@ await Actor.main(
                 async failedRequestHandler(
                     {
                         request,
-                        log: crawlerLog,
+                        log:
+                            crawlerLog,
                     },
                     error,
                 ) {
@@ -2051,14 +2442,17 @@ await Actor.main(
 
                         error:
                             error?.message
-                            || String(error),
+                            || String(
+                                error,
+                            ),
                     });
 
                     crawlerLog.error(
                         `Query failed: ${job.kind}=${job.value || '(all)'}`,
                         {
                             error:
-                                error?.message,
+                                error
+                                    ?.message,
                         },
                     );
 
@@ -2070,29 +2464,35 @@ await Actor.main(
                                         'md5',
                                     )
                                     .update(
-                                        request.uniqueKey,
+                                        request
+                                            .uniqueKey,
                                     )
                                     .digest(
                                         'hex',
                                     )
                             }`;
 
-                        await Actor.setValue(
-                            key,
-                            {
-                                url:
-                                    request.url,
+                        await Actor
+                            .setValue(
+                                key,
+                                {
+                                    url:
+                                        request
+                                            .url,
 
-                                job,
+                                    job,
 
-                                error:
-                                    error?.message
-                                    || String(error),
+                                    error:
+                                        error
+                                            ?.message
+                                        || String(
+                                            error,
+                                        ),
 
-                                at:
-                                    isoNow(),
-                            },
-                        );
+                                    at:
+                                        isoNow(),
+                                },
+                            );
                     }
                 },
             });
@@ -2118,7 +2518,8 @@ await Actor.main(
 
         const stateStoreName =
             clean(
-                input.stateStoreName
+                input
+                    .stateStoreName
                 || 'indonesian-cosmetics-intelligence-state',
             );
 
@@ -2165,7 +2566,8 @@ await Actor.main(
             previousState.records
             ?? {};
 
-        const nextRecords = {};
+        const nextRecords =
+            {};
 
         let newCount =
             0;
@@ -2184,10 +2586,13 @@ await Actor.main(
             of collected.values()
         ) {
             const id =
-                record.registrationNumber;
+                record
+                    .registrationNumber;
 
             const hash =
-                stableHash(record);
+                stableHash(
+                    record,
+                );
 
             const previousEntry =
                 previousRecords[id];
@@ -2215,24 +2620,26 @@ await Actor.main(
                     'CHANGED';
 
                 previous =
-                    previousEntry.record;
+                    previousEntry
+                        .record;
 
                 changedFields =
                     diffFields(
-                        previousEntry.record,
+                        previousEntry
+                            .record,
                         record,
                     );
             }
 
             if (
                 eventType
-                === 'NEW'
+                    === 'NEW'
             ) {
                 newCount +=
                     1;
             } else if (
                 eventType
-                === 'CHANGED'
+                    === 'CHANGED'
             ) {
                 changedCount +=
                     1;
@@ -2266,9 +2673,10 @@ await Actor.main(
                     eventType,
                 )
             ) {
-                await Actor.pushData(
-                    output,
-                );
+                await Actor
+                    .pushData(
+                        output,
+                    );
 
                 emittedCount +=
                     1;
@@ -2282,7 +2690,8 @@ await Actor.main(
 
         if (
             detectChanges
-            && failedJobs.length === 0
+            && failedJobs.length
+                === 0
         ) {
             await stateStore
                 .setValue(
@@ -2300,7 +2709,8 @@ await Actor.main(
                 );
         } else if (
             detectChanges
-            && failedJobs.length > 0
+            && failedJobs.length
+                > 0
         ) {
             log.warning(
                 'Snapshot was NOT updated because one or more query jobs failed. This prevents false change baselines.',
@@ -2330,7 +2740,8 @@ await Actor.main(
 
             snapshotUpdated:
                 detectChanges
-                && failedJobs.length === 0,
+                && failedJobs.length
+                    === 0,
 
             stateStoreName,
 
