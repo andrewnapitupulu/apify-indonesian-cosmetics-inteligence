@@ -3,7 +3,7 @@ import { Actor, log } from 'apify';
 import { PlaywrightCrawler } from 'crawlee';
 
 const BASE_URL = 'https://cekbpom.pom.go.id/produk-kosmetika';
-const SNAPSHOT_VERSION = 2;
+const SNAPSHOT_VERSION = 3;
 
 const clean = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
 const isoNow = () => new Date().toISOString();
@@ -1148,6 +1148,7 @@ async function extractCurrentPage(
         maxRemaining,
         requestDelayMs,
         detailStats,
+        detailFetchedRegistrationNumbers,
     },
     crawlerLog,
 ) {
@@ -1285,17 +1286,25 @@ async function extractCurrentPage(
                 )
                 : true;
 
+        const detailAlreadyFetched =
+            detailFetchedRegistrationNumbers
+                .has(
+                    list.registrationNumber,
+                );
+
         let shouldFetchDetail =
             false;
 
         if (
             detailStrategy === 'always'
+            && !detailAlreadyFetched
         ) {
             shouldFetchDetail =
                 true;
         } else if (
             detailStrategy === 'changesOnly'
             && detectChanges
+            && !detailAlreadyFetched
             && (
                 !previousRecord
                 || listingChanged
@@ -1307,6 +1316,11 @@ async function extractCurrentPage(
 
         if (shouldFetchDetail) {
             detailStats.requested++;
+
+            detailFetchedRegistrationNumbers
+                .add(
+                    list.registrationNumber,
+                );
         } else {
             detailStats.skipped++;
         }
@@ -1683,8 +1697,47 @@ function shouldEmit(
     return true;
 }
 
+function previousObservationCount(previousEntry) {
+    if (!previousEntry) {
+        return 0;
+    }
+
+    const value =
+        Number(
+            previousEntry
+                .observationCount,
+        );
+
+    if (
+        Number.isFinite(value)
+        && value >= 0
+    ) {
+        return value;
+    }
+
+    return 1;
+}
+
+function previousConsecutiveMisses(previousEntry) {
+    const value =
+        Number(
+            previousEntry
+                ?.consecutiveMisses,
+        );
+
+    return (
+        Number.isFinite(value)
+        && value >= 0
+    )
+        ? value
+        : 0;
+}
+
 await Actor.main(
     async () => {
+        const runStartedAt =
+            isoNow();
+
         const input =
             await Actor.getInput()
             ?? {};
@@ -1778,6 +1831,9 @@ await Actor.main(
         log.info(
             'Actor input loaded.',
             {
+                version:
+                    '0.2.2',
+
                 jobs:
                     jobs.length,
 
@@ -1810,6 +1866,9 @@ await Actor.main(
             requested: 0,
             skipped: 0,
         };
+
+        const detailFetchedRegistrationNumbers =
+            new Set();
 
         const stateStoreName =
             clean(
@@ -2028,6 +2087,8 @@ await Actor.main(
                                     requestDelayMs,
 
                                     detailStats,
+
+                                    detailFetchedRegistrationNumbers,
                                 },
                                 crawlerLog,
                             );
@@ -2180,6 +2241,10 @@ await Actor.main(
 
                         duplicateRows,
 
+                        duplicateRegistrationNumberCount:
+                            duplicateRegistrationNumbers
+                                .size,
+
                         duplicateRegistrationNumbers:
                             [
                                 ...duplicateRegistrationNumbers,
@@ -2253,6 +2318,9 @@ await Actor.main(
                                 0,
 
                             duplicateRows:
+                                0,
+
+                            duplicateRegistrationNumberCount:
                                 0,
 
                             duplicateRegistrationNumbers:
@@ -2329,6 +2397,9 @@ await Actor.main(
 
                 watchSignature,
 
+                runCount:
+                    0,
+
                 records:
                     {},
             };
@@ -2353,6 +2424,9 @@ await Actor.main(
 
                 watchSignature,
 
+                runCount:
+                    0,
+
                 records:
                     {},
             };
@@ -2370,7 +2444,7 @@ await Actor.main(
                 .records
             ?? {};
 
-        const nextRecords =
+        const observedRecords =
             {};
 
         let newCount =
@@ -2386,6 +2460,9 @@ await Actor.main(
             0;
 
         let emittedCount =
+            0;
+
+        let reappearedCount =
             0;
 
         for (
@@ -2415,6 +2492,18 @@ await Actor.main(
 
             const previousEntry =
                 previousRecords[id];
+
+            const priorMisses =
+                previousConsecutiveMisses(
+                    previousEntry,
+                );
+
+            if (
+                previousEntry
+                && priorMisses > 0
+            ) {
+                reappearedCount++;
+            }
 
             let eventType;
 
@@ -2495,13 +2584,37 @@ await Actor.main(
                 emittedCount++;
             }
 
-            nextRecords[id] = {
+            const fallbackFirstSeenAt =
+                previousEntry
+                    ?.record
+                    ?.scrapedAt
+                || previousState
+                    .updatedAt
+                || runStartedAt;
+
+            observedRecords[id] = {
                 hash,
 
                 basicHash:
                     currentBasicHash,
 
                 record,
+
+                firstSeenAt:
+                    previousEntry
+                        ?.firstSeenAt
+                    || fallbackFirstSeenAt,
+
+                lastSeenAt:
+                    runStartedAt,
+
+                observationCount:
+                    previousObservationCount(
+                        previousEntry,
+                    ) + 1,
+
+                consecutiveMisses:
+                    0,
             };
         }
 
@@ -2510,10 +2623,10 @@ await Actor.main(
                 previousRecords,
             );
 
-        const currentIds =
+        const observedIds =
             new Set(
                 Object.keys(
-                    nextRecords,
+                    observedRecords,
                 ),
             );
 
@@ -2524,7 +2637,7 @@ await Actor.main(
                 ? previousIds
                     .filter(
                         (id) =>
-                            !currentIds
+                            !observedIds
                                 .has(id),
                     )
                 : [];
@@ -2538,6 +2651,80 @@ await Actor.main(
                 || allowPartialSnapshotUpdate
             );
 
+        const nextRecords = {
+            ...observedRecords,
+        };
+
+        let retainedFromPreviousSnapshot =
+            0;
+
+        if (
+            snapshotCanUpdate
+            && !baselineReset
+        ) {
+            for (
+                const id
+                of previousIds
+            ) {
+                if (
+                    observedIds
+                        .has(id)
+                ) {
+                    continue;
+                }
+
+                const previousEntry =
+                    previousRecords[id];
+
+                if (!previousEntry) {
+                    continue;
+                }
+
+                retainedFromPreviousSnapshot++;
+
+                nextRecords[id] = {
+                    ...previousEntry,
+
+                    firstSeenAt:
+                        previousEntry
+                            .firstSeenAt
+                        || previousEntry
+                            .record
+                            ?.scrapedAt
+                        || previousState
+                            .updatedAt
+                        || runStartedAt,
+
+                    lastSeenAt:
+                        previousEntry
+                            .lastSeenAt
+                        || previousEntry
+                            .record
+                            ?.scrapedAt
+                        || previousState
+                            .updatedAt
+                        || runStartedAt,
+
+                    observationCount:
+                        previousObservationCount(
+                            previousEntry,
+                        ),
+
+                    consecutiveMisses:
+                        previousConsecutiveMisses(
+                            previousEntry,
+                        ) + 1,
+                };
+            }
+        }
+
+        const nextRunCount =
+            Number(
+                previousState
+                    .runCount
+                ?? 0,
+            ) + 1;
+
         if (snapshotCanUpdate) {
             await stateStore
                 .setValue(
@@ -2547,6 +2734,9 @@ await Actor.main(
                             SNAPSHOT_VERSION,
 
                         watchSignature,
+
+                        runCount:
+                            nextRunCount,
 
                         updatedAt:
                             isoNow(),
@@ -2603,9 +2793,58 @@ await Actor.main(
                     0,
                 );
 
+        const uniqueDuplicateRegistrationNumbers =
+            new Set(
+                querySummaryList
+                    .flatMap(
+                        (query) =>
+                            query
+                                ?.duplicateRegistrationNumbers
+                            ?? [],
+                    ),
+            );
+
+        const missingDetails =
+            possiblyMissing
+                .slice(
+                    0,
+                    100,
+                )
+                .map(
+                    (id) => {
+                        const entry =
+                            nextRecords[id]
+                            || previousRecords[id];
+
+                        return {
+                            registrationNumber:
+                                id,
+
+                            consecutiveMisses:
+                                entry
+                                    ?.consecutiveMisses
+                                ?? 0,
+
+                            lastSeenAt:
+                                entry
+                                    ?.lastSeenAt
+                                || '',
+                        };
+                    },
+                );
+
+        const persistedSnapshotProducts =
+            snapshotCanUpdate
+                ? Object.keys(
+                    nextRecords,
+                ).length
+                : Object.keys(
+                    previousRecords,
+                ).length;
+
         const summary = {
             version:
-                '0.2.1',
+                '0.2.2',
 
             monitoringSummary: {
                 watchlistQueries:
@@ -2629,24 +2868,25 @@ await Actor.main(
                 rawRowsCollected:
                     totalRawRowsCollected,
 
-                uniqueProducts:
+                observedThisRun:
                     collected.size,
 
                 duplicateRows:
                     totalDuplicateRows,
 
-                productsChecked:
-                    collected.size,
+                duplicateRegistrationNumbers:
+                    uniqueDuplicateRegistrationNumbers
+                        .size,
 
-                previousSnapshotProducts:
+                previousKnownProducts:
                     Object.keys(
                         previousRecords,
                     ).length,
 
-                currentSnapshotProducts:
-                    Object.keys(
-                        nextRecords,
-                    ).length,
+                retainedFromPreviousSnapshot,
+
+                snapshotProducts:
+                    persistedSnapshotProducts,
 
                 newProducts:
                     newCount,
@@ -2657,7 +2897,7 @@ await Actor.main(
                 unchangedProducts:
                     unchangedCount,
 
-                snapshotProducts:
+                snapshotProductsEmitted:
                     snapshotCount,
 
                 emittedRecords:
@@ -2666,6 +2906,9 @@ await Actor.main(
                 possiblyMissingProducts:
                     possiblyMissing
                         .length,
+
+                reappearedProducts:
+                    reappearedCount,
             },
 
             querySummaries:
@@ -2678,12 +2921,24 @@ await Actor.main(
                         100,
                     ),
 
+            possiblyMissingDetails:
+                missingDetails,
+
             baselineReset,
 
             baselineResetReason,
 
             snapshotUpdated:
                 snapshotCanUpdate,
+
+            stateRunCount:
+                snapshotCanUpdate
+                    ? nextRunCount
+                    : Number(
+                        previousState
+                            .runCount
+                        ?? 0,
+                    ),
 
             stateStoreName,
 
