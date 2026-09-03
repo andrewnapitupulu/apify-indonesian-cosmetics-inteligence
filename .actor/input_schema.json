@@ -1,108 +1,147 @@
 {
   "title": "Indonesian Cosmetics Intelligence",
-  "description": "Monitor targeted cosmetics records in the public BPOM registry and optionally detect new or changed records across runs.",
+  "description": "Monitor BPOM cosmetics records for brands, registrants, products, registration numbers, or composition keywords and detect new or changed products across runs.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
     "brands": {
       "title": "Brands to monitor",
       "type": "array",
-      "description": "One or more cosmetics brands to search in the BPOM registry. Each brand is queried separately.",
+      "description": "Cosmetics brands to monitor in BPOM. Each brand is queried separately.",
       "editor": "stringList",
-      "default": ["SOMETHINC"]
+      "default": [
+        "SOMETHINC"
+      ],
+      "items": {
+        "type": "string"
+      }
     },
     "registrants": {
       "title": "Registrants / companies",
       "type": "array",
-      "description": "Optional BPOM registrant/company names to monitor.",
+      "description": "Optional BPOM registrant or company names to monitor.",
       "editor": "stringList",
-      "default": []
+      "default": [],
+      "items": {
+        "type": "string"
+      }
     },
     "productNames": {
       "title": "Product names",
       "type": "array",
       "description": "Optional product-name searches.",
       "editor": "stringList",
-      "default": []
+      "default": [],
+      "items": {
+        "type": "string"
+      }
     },
     "registrationNumbers": {
       "title": "Registration numbers (NIE)",
       "type": "array",
-      "description": "Optional exact or partial BPOM registration numbers.",
+      "description": "Optional BPOM registration numbers to monitor.",
       "editor": "stringList",
-      "default": []
+      "default": [],
+      "items": {
+        "type": "string"
+      }
     },
     "compositions": {
       "title": "Composition keywords",
       "type": "array",
-      "description": "Optional composition/ingredient keywords supported by the BPOM filter.",
+      "description": "Optional composition or ingredient keywords supported by the BPOM filter.",
       "editor": "stringList",
-      "default": []
+      "default": [],
+      "items": {
+        "type": "string"
+      }
     },
     "maxItemsPerQuery": {
       "title": "Maximum results per query",
       "type": "integer",
-      "description": "Safety and cost limit for each brand/company/product/filter query.",
-      "minimum": 1,
-      "maximum": 2000,
-      "default": 100
+      "description": "0 = no item limit. For production monitoring, keep this at 0 so the complete matching result set is checked.",
+      "minimum": 0,
+      "maximum": 10000,
+      "default": 0,
+      "editor": "number"
     },
     "maxPagesPerQuery": {
       "title": "Maximum pages per query",
       "type": "integer",
-      "description": "Maximum BPOM pagination pages visited for each query.",
+      "description": "Safety cap for BPOM pagination. Increase this if a monitored brand has more results than the current cap can cover.",
       "minimum": 1,
-      "maximum": 200,
-      "default": 20
+      "maximum": 1000,
+      "default": 100,
+      "editor": "number"
     },
     "includeDetails": {
       "title": "Open product details",
       "type": "boolean",
-      "description": "Attempt to open the BPOM product detail modal for richer fields. This is slower and more sensitive to UI changes.",
-      "default": true
+      "description": "Open each BPOM product detail modal to collect manufacturer, composition, packaging, kits, and issuing unit. Recommended for monitoring.",
+      "default": true,
+      "editor": "checkbox"
     },
     "detectChanges": {
       "title": "Detect changes across runs",
       "type": "boolean",
-      "description": "Compare current records with a persistent snapshot stored in a named Key-Value Store.",
-      "default": true
+      "description": "Compare current records with a persistent snapshot. When disabled, records are emitted as SNAPSHOT events.",
+      "default": true,
+      "editor": "checkbox"
     },
     "emit": {
       "title": "Records to output",
       "type": "string",
-      "description": "all = every current record; changes = NEW or CHANGED only; new = only NEW records.",
+      "description": "all = every record; changes = NEW or CHANGED only; new = NEW only. For scheduled monitoring, changes is recommended.",
       "editor": "select",
-      "enum": ["all", "changes", "new"],
-      "enumTitles": ["All records", "New + changed only", "New only"],
-      "default": "all"
+      "enum": [
+        "all",
+        "changes",
+        "new"
+      ],
+      "enumTitles": [
+        "All records",
+        "New + changed only",
+        "New only"
+      ],
+      "default": "changes"
     },
     "stateStoreName": {
-  "title": "State store name",
-  "type": "string",
-  "description": "Named Apify Key-Value Store used to persist fingerprints between runs.",
-  "default": "indonesian-cosmetics-intelligence-state",
-  "editor": "textfield"
-},
-"stateKey": {
-  "title": "Watchlist state key",
-  "type": "string",
-  "description": "Use a different key for independent monitoring watchlists.",
-  "default": "default",
-  "editor": "textfield"
-},
+      "title": "State store name",
+      "type": "string",
+      "description": "Named Apify Key-Value Store used to persist monitoring snapshots.",
+      "default": "indonesian-cosmetics-intelligence-state",
+      "editor": "textfield"
+    },
+    "stateKey": {
+      "title": "Watchlist state key",
+      "type": "string",
+      "description": "Unique key for this watchlist. Keep the same key across scheduled runs. Use a new key when starting a new independent baseline.",
+      "default": "default",
+      "editor": "textfield"
+    },
     "requestDelayMs": {
       "title": "Delay between interactions (ms)",
       "type": "integer",
-      "description": "Small delay used to reduce request pressure on the public source.",
+      "description": "Delay between BPOM interactions to reduce request pressure on the public source.",
       "minimum": 0,
       "maximum": 10000,
-      "default": 500
+      "default": 800,
+      "editor": "number"
+    },
+    "allowPartialSnapshotUpdate": {
+      "title": "Allow partial snapshot updates",
+      "type": "boolean",
+      "description": "Advanced. If enabled, the Actor may update the baseline even when the item/page safety limit prevented full result coverage. Keep disabled for production monitoring.",
+      "default": false,
+      "editor": "checkbox"
     },
     "debug": {
-      "title": "Save debug artifacts",
+      "title": "Debug mode",
       "type": "boolean",
-      "description": "Save HTML and screenshots to the default Key-Value Store if a query cannot be parsed.",
-      "default": false
+      "description": "Enable verbose diagnostics.",
+      "default": false,
+      "editor": "checkbox"
     }
-  }
+  },
+  "additionalProperties": false
 }
