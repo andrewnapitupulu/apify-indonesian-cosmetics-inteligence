@@ -3,108 +3,111 @@ import { Actor, log } from 'apify';
 import { PlaywrightCrawler } from 'crawlee';
 
 const BASE_URL = 'https://cekbpom.pom.go.id/produk-kosmetika';
-const SNAPSHOT_VERSION = 1;
+const SNAPSHOT_VERSION = 2;
 
-const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+const clean = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
 const isoNow = () => new Date().toISOString();
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function textLines(value) {
-    return String(value ?? '')
+function textLines(v) {
+    return String(v ?? '')
         .split(/\r?\n/)
-        .map((line) => clean(line))
+        .map(clean)
         .filter(Boolean);
 }
 
-function parseRegistrationCell(value) {
-    const text = clean(value);
-
-    const registrationNumber =
-        text.match(/\b[A-Z]{2,3}\d{8,}\b/i)?.[0]
-        || '';
-
-    const issuedDate =
-        text.match(/Terbit\s*:\s*(\d{4}-\d{2}-\d{2})/i)?.[1]
-        || '';
+function parseRegistrationCell(v) {
+    const t = clean(v);
 
     return {
-        registrationNumber,
-        issuedDate,
+        registrationNumber:
+            t.match(/\b[A-Z]{2,3}\d{8,}\b/i)?.[0] || '',
+
+        issuedDate:
+            t.match(
+                /Terbit\s*:\s*(\d{4}-\d{2}-\d{2})/i,
+            )?.[1] || '',
     };
 }
 
-function parseProductCell(value) {
-    const lines = textLines(value);
+function parseProductCell(v) {
+    const lines = textLines(v);
 
     let brand = '';
     let packaging = '';
-    const productNameLines = [];
+
+    const name = [];
 
     for (const line of lines) {
         if (/^Merk\s*:/i.test(line)) {
-            brand = clean(line.replace(/^Merk\s*:/i, ''));
-            continue;
+            brand = clean(
+                line.replace(/^Merk\s*:/i, ''),
+            );
+        } else if (/^Merek\s*:/i.test(line)) {
+            brand = clean(
+                line.replace(/^Merek\s*:/i, ''),
+            );
+        } else if (/^Kemasan\s*:/i.test(line)) {
+            packaging = clean(
+                line.replace(/^Kemasan\s*:/i, ''),
+            );
+        } else {
+            name.push(line);
         }
-
-        if (/^Merek\s*:/i.test(line)) {
-            brand = clean(line.replace(/^Merek\s*:/i, ''));
-            continue;
-        }
-
-        if (/^Kemasan\s*:/i.test(line)) {
-            packaging = clean(line.replace(/^Kemasan\s*:/i, ''));
-            continue;
-        }
-
-        productNameLines.push(line);
     }
 
-    const fullText = clean(value);
+    const full = clean(v);
 
     if (!brand) {
-        brand = fullText.match(
-            /Merk\s*:\s*(.*?)(?=Kemasan\s*:|$)/i,
-        )?.[1]?.trim() || '';
+        brand =
+            full.match(
+                /Merk\s*:\s*(.*?)(?=Kemasan\s*:|$)/i,
+            )?.[1]?.trim() || '';
     }
 
     if (!packaging) {
-        packaging = fullText.match(
-            /Kemasan\s*:\s*(.*)$/i,
-        )?.[1]?.trim() || '';
+        packaging =
+            full.match(
+                /Kemasan\s*:\s*(.*)$/i,
+            )?.[1]?.trim() || '';
     }
 
-    let productName = clean(
-        productNameLines.join(' '),
-    );
-
-    productName = productName
-        .replace(/Merk\s*:.*$/i, '')
-        .replace(/Merek\s*:.*$/i, '');
-
     return {
-        productName: clean(productName),
+        productName: clean(
+            name
+                .join(' ')
+                .replace(/Merk\s*:.*$/i, '')
+                .replace(/Merek\s*:.*$/i, ''),
+        ),
+
         brand: clean(brand),
+
         packaging: clean(packaging),
     };
 }
 
-function parseRegistrantCell(value) {
-    const lines = textLines(value);
+function parseRegistrantCell(v) {
+    const lines = textLines(v);
 
-    if (lines.length >= 2) {
-        return {
-            registrant: clean(lines[0]),
+    return lines.length >= 2
+        ? {
+            registrant:
+                clean(lines[0]),
 
-            registrantLocation: clean(
-                lines.slice(1).join(' '),
-            ),
+            registrantLocation:
+                clean(
+                    lines
+                        .slice(1)
+                        .join(' '),
+                ),
+        }
+        : {
+            registrant:
+                clean(v),
+
+            registrantLocation:
+                '',
         };
-    }
-
-    return {
-        registrant: clean(value),
-        registrantLocation: '',
-    };
 }
 
 function stableHash(record) {
@@ -126,18 +129,21 @@ function stableHash(record) {
         'status',
     ];
 
-    const payload = Object.fromEntries(
-        fields.map(
-            (key) => [
-                key,
-                clean(record[key]),
-            ],
-        ),
-    );
+    const payload =
+        Object.fromEntries(
+            fields.map(
+                (key) => [
+                    key,
+                    clean(record[key]),
+                ],
+            ),
+        );
 
     return crypto
         .createHash('sha256')
-        .update(JSON.stringify(payload))
+        .update(
+            JSON.stringify(payload),
+        )
         .digest('hex');
 }
 
@@ -145,22 +151,30 @@ function normalizeKey(label) {
     return clean(label)
         .toLowerCase()
         .normalize('NFKD')
-        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(
+            /[^a-z0-9]+/g,
+            ' ',
+        )
         .trim();
 }
 
-function mapDetails(rawPairs = {}) {
-    const normalized = Object.fromEntries(
-        Object.entries(rawPairs).map(
-            ([key, value]) => [
-                normalizeKey(key),
-                clean(value),
-            ],
-        ),
-    );
+function mapDetails(raw = {}) {
+    const normalized =
+        Object.fromEntries(
+            Object.entries(raw)
+                .map(
+                    ([key, value]) => [
+                        normalizeKey(key),
+                        clean(value),
+                    ],
+                ),
+        );
 
     const pick = (...candidates) => {
-        for (const candidate of candidates) {
+        for (
+            const candidate
+            of candidates
+        ) {
             const target =
                 normalizeKey(candidate);
 
@@ -249,8 +263,12 @@ function buildJobs(input) {
         kind,
         values = [],
     ) => {
-        for (const raw of values || []) {
-            const value = clean(raw);
+        for (
+            const raw
+            of values || []
+        ) {
+            const value =
+                clean(raw);
 
             if (value) {
                 jobs.push({
@@ -287,13 +305,44 @@ function buildJobs(input) {
     );
 
     if (!jobs.length) {
-        jobs.push({
-            kind: 'all',
-            value: '',
-        });
+        throw new Error(
+            'At least one monitoring criterion is required: brand, registrant, product name, registration number, or composition keyword.',
+        );
     }
 
     return jobs;
+}
+
+function buildWatchSignature(jobs) {
+    const normalized =
+        jobs
+            .map(
+                (job) => ({
+                    kind:
+                        job.kind,
+
+                    value:
+                        clean(
+                            job.value,
+                        ).toLowerCase(),
+                }),
+            )
+            .sort(
+                (a, b) =>
+                    `${a.kind}:${a.value}`
+                        .localeCompare(
+                            `${b.kind}:${b.value}`,
+                        ),
+            );
+
+    return crypto
+        .createHash('sha256')
+        .update(
+            JSON.stringify(
+                normalized,
+            ),
+        )
+        .digest('hex');
 }
 
 function inputPlaceholderFor(kind) {
@@ -341,182 +390,66 @@ async function visibleLocator(locator) {
     return null;
 }
 
-async function applyFilter(
-    page,
-    job,
-    requestDelayMs,
-    crawlerLog,
-) {
-    if (job.kind === 'all') {
-        return;
-    }
+async function getProductTable(page) {
+    const tables =
+        page
+            .locator('table')
+            .filter({
+                hasText:
+                    /Nomor Registrasi/i,
+            })
+            .filter({
+                hasText:
+                    /Nama Produk/i,
+            });
 
-    const openFilter =
-        await visibleLocator(
-            page.getByRole(
-                'button',
-                {
-                    name:
-                        /^Filter$/i,
-                },
-            ),
-        );
+    let fallback =
+        null;
 
-    if (!openFilter) {
-        throw new Error(
-            'BPOM Filter button was not found.',
-        );
-    }
+    const count =
+        await tables.count();
 
-    await openFilter.click();
+    for (
+        let i = 0;
+        i < count;
+        i++
+    ) {
+        const table =
+            tables.nth(i);
 
-    await sleep(
-        requestDelayMs,
-    );
-
-    const placeholder =
-        inputPlaceholderFor(
-            job.kind,
-        );
-
-    if (!placeholder) {
-        throw new Error(
-            `Unsupported query kind: ${job.kind}`,
-        );
-    }
-
-    const field =
-        await visibleLocator(
-            page.locator(
-                `input[placeholder="${placeholder}"]`,
-            ),
-        );
-
-    if (!field) {
-        throw new Error(
-            `BPOM filter field was not found: ${placeholder}`,
-        );
-    }
-
-    await field.fill(
-        job.value,
-    );
-
-    const applyFilterButton =
-        await visibleLocator(
-            page.getByRole(
-                'button',
-                {
-                    name:
-                        /^Filter$/i,
-                },
-            ),
-        );
-
-    if (!applyFilterButton) {
-        throw new Error(
-            'BPOM apply Filter button was not found.',
-        );
-    }
-
-    const before =
-        clean(
-            await page
-                .locator(
-                    'table tbody',
-                )
-                .first()
-                .innerText()
+        if (
+            !await table
+                .isVisible()
                 .catch(
-                    () => '',
-                ),
-        );
+                    () => false,
+                )
+        ) {
+            continue;
+        }
 
-    await applyFilterButton.click();
+        if (!fallback) {
+            fallback =
+                table;
+        }
 
-    await sleep(
-        Math.max(
-            300,
-            requestDelayMs,
-        ),
-    );
+        if (
+            await table
+                .locator(
+                    'tbody tr',
+                )
+                .count()
+            > 0
+        ) {
+            return table;
+        }
+    }
 
-    await page.waitForFunction(
-        (previous) => {
-            const tables = [
-                ...document.querySelectorAll(
-                    'table',
-                ),
-            ];
+    if (fallback) {
+        return fallback;
+    }
 
-            for (const table of tables) {
-                const headers =
-                    (
-                        table
-                            .querySelector(
-                                'thead',
-                            )
-                            ?.textContent
-                        || ''
-                    )
-                        .replace(
-                            /\s+/g,
-                            ' ',
-                        )
-                        .trim();
-
-                if (
-                    !/Nomor Registrasi/i
-                        .test(headers)
-                    || !/Nama Produk/i
-                        .test(headers)
-                ) {
-                    continue;
-                }
-
-                const body =
-                    table.querySelector(
-                        'tbody',
-                    );
-
-                if (!body) {
-                    continue;
-                }
-
-                const current =
-                    (
-                        body.textContent
-                        || ''
-                    )
-                        .replace(
-                            /\s+/g,
-                            ' ',
-                        )
-                        .trim();
-
-                if (
-                    current
-                        !== previous
-                    || current.length
-                        > 0
-                ) {
-                    return true;
-                }
-            }
-
-            return false;
-        },
-        before,
-        {
-            timeout:
-                20000,
-        },
-    ).catch(
-        () => {
-            crawlerLog.debug(
-                'Table text did not visibly change after applying filter; continuing.',
-            );
-        },
+    throw new Error(
+        'BPOM product result table was not found.',
     );
 }
 
@@ -530,14 +463,13 @@ async function waitForTable(page) {
     );
 
     await page.waitForFunction(
-        () => {
-            const tables = [
-                ...document.querySelectorAll(
-                    'table',
-                ),
-            ];
-
-            return tables.some(
+        () =>
+            [
+                ...document
+                    .querySelectorAll(
+                        'table',
+                    ),
+            ].some(
                 (table) => {
                     const headers =
                         (
@@ -554,13 +486,12 @@ async function waitForTable(page) {
                             )
                             .trim();
 
-                    const isProductTable =
-                        /Nomor Registrasi/i
+                    if (
+                        !/Nomor Registrasi/i
                             .test(headers)
-                        && /Nama Produk/i
-                            .test(headers);
-
-                    if (!isProductTable) {
+                        || !/Nama Produk/i
+                            .test(headers)
+                    ) {
                         return false;
                     }
 
@@ -576,7 +507,7 @@ async function waitForTable(page) {
                         return true;
                     }
 
-                    const bodyText =
+                    const body =
                         (
                             table
                                 .querySelector(
@@ -593,13 +524,10 @@ async function waitForTable(page) {
 
                     return (
                         /tidak ada data|no data|data kosong/i
-                            .test(
-                                bodyText,
-                            )
+                            .test(body)
                     );
                 },
-            );
-        },
+            ),
         {
             timeout:
                 30000,
@@ -609,9 +537,136 @@ async function waitForTable(page) {
     );
 }
 
-async function extractDetailPairs(
-    dialog,
+async function applyFilter(
+    page,
+    job,
+    delay,
+    crawlerLog,
 ) {
+    const open =
+        await visibleLocator(
+            page.getByRole(
+                'button',
+                {
+                    name:
+                        /^Filter$/i,
+                },
+            ),
+        );
+
+    if (!open) {
+        throw new Error(
+            'BPOM Filter button was not found.',
+        );
+    }
+
+    await open.click();
+
+    await sleep(
+        delay,
+    );
+
+    const placeholder =
+        inputPlaceholderFor(
+            job.kind,
+        );
+
+    const field =
+        placeholder
+            ? await visibleLocator(
+                page.locator(
+                    `input[placeholder="${placeholder}"]`,
+                ),
+            )
+            : null;
+
+    if (!field) {
+        throw new Error(
+            `BPOM filter field was not found: ${placeholder || job.kind}`,
+        );
+    }
+
+    await field.fill(
+        job.value,
+    );
+
+    const apply =
+        await visibleLocator(
+            page.getByRole(
+                'button',
+                {
+                    name:
+                        /^Filter$/i,
+                },
+            ),
+        );
+
+    if (!apply) {
+        throw new Error(
+            'BPOM apply Filter button was not found.',
+        );
+    }
+
+    await apply.click();
+
+    await sleep(
+        Math.max(
+            300,
+            delay,
+        ),
+    );
+
+    await page.waitForFunction(
+        () =>
+            [
+                ...document
+                    .querySelectorAll(
+                        'table',
+                    ),
+            ].some(
+                (table) => {
+                    const headers =
+                        (
+                            table
+                                .querySelector(
+                                    'thead',
+                                )
+                                ?.textContent
+                            || ''
+                        )
+                            .replace(
+                                /\s+/g,
+                                ' ',
+                            )
+                            .trim();
+
+                    return (
+                        /Nomor Registrasi/i
+                            .test(headers)
+                        && /Nama Produk/i
+                            .test(headers)
+                        && table
+                            .querySelectorAll(
+                                'tbody tr',
+                            )
+                            .length
+                            > 0
+                    );
+                },
+            ),
+        {
+            timeout:
+                20000,
+        },
+    ).catch(
+        () =>
+            crawlerLog.debug(
+                'Filtered table did not signal readiness; continuing.',
+            ),
+    );
+}
+
+async function extractDetailPairs(dialog) {
     return dialog.evaluate(
         (root) => {
             const result = {};
@@ -631,16 +686,18 @@ async function extractDetailPairs(
                         )
                         .trim();
 
-            const normalizeLabel =
+            const normalize =
                 (value) =>
-                    cleanText(value)
+                    cleanText(
+                        value,
+                    )
                         .replace(
                             /:$/,
                             '',
                         )
                         .toLowerCase();
 
-            const knownLabels = [
+            const labels = [
                 'Nomor Registrasi',
                 'Nomor Izin Edar',
                 'NIE',
@@ -662,11 +719,11 @@ async function extractDetailPairs(
                 'Status',
             ];
 
-            const normalizedKnownLabels =
+            const known =
                 new Map(
-                    knownLabels.map(
+                    labels.map(
                         (label) => [
-                            normalizeLabel(
+                            normalize(
                                 label,
                             ),
                             label,
@@ -674,32 +731,35 @@ async function extractDetailPairs(
                     ),
                 );
 
-            const put = (
-                key,
-                value,
-            ) => {
-                const k =
-                    cleanText(key)
-                        .replace(
-                            /:$/,
-                            '',
+            const put =
+                (
+                    key,
+                    value,
+                ) => {
+                    key =
+                        cleanText(
+                            key,
+                        )
+                            .replace(
+                                /:$/,
+                                '',
+                            );
+
+                    value =
+                        cleanText(
+                            value,
                         );
 
-                const v =
-                    cleanText(value);
-
-                if (
-                    !k
-                    || !v
-                    || k === v
-                ) {
-                    return;
-                }
-
-                if (!result[k]) {
-                    result[k] = v;
-                }
-            };
+                    if (
+                        key
+                        && value
+                        && key !== value
+                        && !result[key]
+                    ) {
+                        result[key] =
+                            value;
+                    }
+                };
 
             root
                 .querySelectorAll(
@@ -707,22 +767,23 @@ async function extractDetailPairs(
                 )
                 .forEach(
                     (tr) => {
-                        const cells = [
-                            ...tr
-                                .querySelectorAll(
-                                    ':scope > th, :scope > td',
-                                ),
-                        ]
-                            .map(
-                                (el) =>
-                                    cleanText(
-                                        el.innerText
-                                        || el.textContent,
+                        const cells =
+                            [
+                                ...tr
+                                    .querySelectorAll(
+                                        ':scope > th, :scope > td',
                                     ),
-                            )
-                            .filter(
-                                Boolean,
-                            );
+                            ]
+                                .map(
+                                    (el) =>
+                                        cleanText(
+                                            el.innerText
+                                            || el.textContent,
+                                        ),
+                                )
+                                .filter(
+                                    Boolean,
+                                );
 
                         if (
                             cells.length
@@ -732,116 +793,18 @@ async function extractDetailPairs(
                                 cells[0],
                                 cells
                                     .slice(1)
-                                    .join(
-                                        ' ',
-                                    ),
+                                    .join(' '),
                             );
                         }
                     },
                 );
-
-            root
-                .querySelectorAll(
-                    'dt',
-                )
-                .forEach(
-                    (dt) => {
-                        let sibling =
-                            dt
-                                .nextElementSibling;
-
-                        while (
-                            sibling
-                            && sibling
-                                .tagName
-                                ?.toLowerCase()
-                                !== 'dd'
-                        ) {
-                            sibling =
-                                sibling
-                                    .nextElementSibling;
-                        }
-
-                        if (sibling) {
-                            put(
-                                dt.innerText,
-                                sibling.innerText,
-                            );
-                        }
-                    },
-                );
-
-            root
-                .querySelectorAll(
-                    'label',
-                )
-                .forEach(
-                    (label) => {
-                        const key =
-                            cleanText(
-                                label.innerText
-                                || label.textContent,
-                            );
-
-                        let value = '';
-
-                        let sibling =
-                            label
-                                .nextElementSibling;
-
-                        while (
-                            sibling
-                            && !value
-                        ) {
-                            value =
-                                cleanText(
-                                    sibling.innerText
-                                    || sibling.textContent
-                                    || sibling.value,
-                                );
-
-                            sibling =
-                                sibling
-                                    .nextElementSibling;
-                        }
-
-                        if (!value) {
-                            const parent =
-                                label
-                                    .parentElement;
-
-                            if (parent) {
-                                const parentText =
-                                    cleanText(
-                                        parent
-                                            .innerText,
-                                    );
-
-                                value =
-                                    cleanText(
-                                        parentText
-                                            .replace(
-                                                key,
-                                                '',
-                                            ),
-                                    );
-                            }
-                        }
-
-                        put(
-                            key,
-                            value,
-                        );
-                    },
-                );
-
-            const rawText =
-                root.innerText
-                || root.textContent
-                || '';
 
             const lines =
-                rawText
+                (
+                    root.innerText
+                    || root.textContent
+                    || ''
+                )
                     .split(
                         /\r?\n/,
                     )
@@ -854,13 +817,9 @@ async function extractDetailPairs(
                     .filter(
                         (line) =>
                             !/^Detail Produk$/i
-                                .test(
-                                    line,
-                                )
+                                .test(line)
                             && !/^Close$/i
-                                .test(
-                                    line,
-                                )
+                                .test(line)
                             && line !== '×',
                     );
 
@@ -872,51 +831,44 @@ async function extractDetailPairs(
                 const line =
                     lines[i];
 
-                const colonMatch =
+                const colon =
                     line.match(
                         /^([^:]{2,50})\s*:\s*(.+)$/,
                     );
 
-                if (colonMatch) {
-                    const possibleLabel =
-                        normalizeLabel(
-                            colonMatch[1],
-                        );
-
-                    if (
-                        normalizedKnownLabels
-                            .has(
-                                possibleLabel,
-                            )
-                    ) {
-                        put(
-                            normalizedKnownLabels
-                                .get(
-                                    possibleLabel,
-                                ),
-                            colonMatch[2],
-                        );
-
-                        continue;
-                    }
-                }
-
-                const normalizedLine =
-                    normalizeLabel(
-                        line,
+                if (
+                    colon
+                    && known.has(
+                        normalize(
+                            colon[1],
+                        ),
+                    )
+                ) {
+                    put(
+                        known.get(
+                            normalize(
+                                colon[1],
+                            ),
+                        ),
+                        colon[2],
                     );
 
-                const canonicalLabel =
-                    normalizedKnownLabels
-                        .get(
-                            normalizedLine,
-                        );
-
-                if (!canonicalLabel) {
                     continue;
                 }
 
-                const values = [];
+                const label =
+                    known.get(
+                        normalize(
+                            line,
+                        ),
+                    );
+
+                if (!label) {
+                    continue;
+                }
+
+                const values =
+                    [];
 
                 for (
                     let j = i + 1;
@@ -926,34 +878,28 @@ async function extractDetailPairs(
                     const candidate =
                         lines[j];
 
-                    const candidateNormalized =
-                        normalizeLabel(
-                            candidate,
-                        );
-
                     if (
-                        normalizedKnownLabels
-                            .has(
-                                candidateNormalized,
-                            )
+                        known.has(
+                            normalize(
+                                candidate,
+                            ),
+                        )
                     ) {
                         break;
                     }
 
                     const nextColon =
-                        candidate
-                            .match(
-                                /^([^:]{2,50})\s*:/,
-                            );
+                        candidate.match(
+                            /^([^:]{2,50})\s*:/,
+                        );
 
                     if (
                         nextColon
-                        && normalizedKnownLabels
-                            .has(
-                                normalizeLabel(
-                                    nextColon[1],
-                                ),
-                            )
+                        && known.has(
+                            normalize(
+                                nextColon[1],
+                            ),
+                        )
                     ) {
                         break;
                     }
@@ -967,7 +913,7 @@ async function extractDetailPairs(
                     values.length
                 ) {
                     put(
-                        canonicalLabel,
+                        label,
                         values.join(
                             ' ',
                         ),
@@ -980,9 +926,7 @@ async function extractDetailPairs(
     );
 }
 
-async function getVisibleDialog(
-    page,
-) {
+async function getVisibleDialog(page) {
     const candidates =
         page.locator(
             '.modal:visible, [role="dialog"]:visible',
@@ -996,12 +940,12 @@ async function getVisibleDialog(
         i >= 0;
         i--
     ) {
-        const candidate =
+        const dialog =
             candidates.nth(i);
 
         const text =
             clean(
-                await candidate
+                await dialog
                     .innerText()
                     .catch(
                         () => '',
@@ -1013,7 +957,7 @@ async function getVisibleDialog(
                 .test(text)
             || text.length > 20
         ) {
-            return candidate;
+            return dialog;
         }
     }
 
@@ -1023,7 +967,7 @@ async function getVisibleDialog(
 async function enrichFromRow(
     page,
     row,
-    requestDelayMs,
+    delay,
     crawlerLog,
 ) {
     try {
@@ -1032,19 +976,18 @@ async function enrichFromRow(
                 'a, button, [role="button"]',
             );
 
-        const clickableCount =
+        const count =
             await clickable.count();
 
         crawlerLog.debug(
             'Opening BPOM product detail.',
             {
-                clickableCount,
+                clickableCount:
+                    count,
             },
         );
 
-        if (
-            clickableCount > 0
-        ) {
+        if (count > 0) {
             await clickable
                 .first()
                 .click();
@@ -1055,7 +998,7 @@ async function enrichFromRow(
         await page.waitForTimeout(
             Math.max(
                 800,
-                requestDelayMs,
+                delay,
             ),
         );
 
@@ -1065,77 +1008,8 @@ async function enrichFromRow(
             );
 
         if (!dialog) {
-            crawlerLog.debug(
-                'Product detail dialog was not detected.',
-            );
-
             return {};
         }
-
-        await dialog.waitFor({
-            state: 'visible',
-            timeout: 10000,
-        }).catch(
-            () => undefined,
-        );
-
-        await page.waitForFunction(
-            () => {
-                const dialogs = [
-                    ...document.querySelectorAll(
-                        '.modal, [role="dialog"]',
-                    ),
-                ];
-
-                const visible =
-                    dialogs.find(
-                        (el) => {
-                            const rect =
-                                el.getBoundingClientRect();
-
-                            const style =
-                                window
-                                    .getComputedStyle(
-                                        el,
-                                    );
-
-                            return (
-                                rect.width > 0
-                                && rect.height > 0
-                                && style.display
-                                    !== 'none'
-                                && style.visibility
-                                    !== 'hidden'
-                            );
-                        },
-                    );
-
-                if (!visible) {
-                    return false;
-                }
-
-                const text =
-                    (
-                        visible.innerText
-                        || ''
-                    )
-                        .replace(
-                            /\s+/g,
-                            ' ',
-                        )
-                        .trim();
-
-                return (
-                    text.length > 20
-                );
-            },
-            {
-                timeout:
-                    10000,
-            },
-        ).catch(
-            () => undefined,
-        );
 
         const dialogText =
             clean(
@@ -1150,17 +1024,21 @@ async function enrichFromRow(
             'BPOM product detail dialog detected.',
             {
                 textPreview:
-                    dialogText
-                        .slice(
-                            0,
-                            2000,
-                        ),
+                    dialogText.slice(
+                        0,
+                        2000,
+                    ),
             },
         );
 
         const rawPairs =
             await extractDetailPairs(
                 dialog,
+            );
+
+        const details =
+            mapDetails(
+                rawPairs,
             );
 
         crawlerLog.debug(
@@ -1170,11 +1048,6 @@ async function enrichFromRow(
             },
         );
 
-        const details =
-            mapDetails(
-                rawPairs,
-            );
-
         crawlerLog.debug(
             'BPOM mapped product details.',
             {
@@ -1182,63 +1055,7 @@ async function enrichFromRow(
             },
         );
 
-        const hasUsefulDetail =
-            Boolean(
-                details.composition
-                || details.expiryDate
-                || details.status
-                || details.dosageForm
-                || details.applicationDate
-                || details.registrationNumber
-                || details.productName
-                || details.brand
-                || details.cosmeticsManufacturer
-                || details.issuedBy,
-            );
-
-        if (!hasUsefulDetail) {
-            const debugId =
-                crypto
-                    .createHash(
-                        'md5',
-                    )
-                    .update(
-                        `${Date.now()}-${dialogText}`,
-                    )
-                    .digest(
-                        'hex',
-                    )
-                    .slice(
-                        0,
-                        12,
-                    );
-
-            await Actor.setValue(
-                `DEBUG_DETAIL_${debugId}`,
-                {
-                    dialogText,
-                    rawPairs,
-                    details,
-
-                    html:
-                        await dialog
-                            .innerHTML()
-                            .catch(
-                                () => '',
-                            ),
-                },
-            );
-
-            crawlerLog.warning(
-                'Detail modal opened but no structured fields could be extracted.',
-                {
-                    debugKey:
-                        `DEBUG_DETAIL_${debugId}`,
-                },
-            );
-        }
-
-        const closeButton =
+        const close =
             await visibleLocator(
                 dialog.getByRole(
                     'button',
@@ -1249,36 +1066,20 @@ async function enrichFromRow(
                 ),
             );
 
-        if (closeButton) {
-            await closeButton
+        if (close) {
+            await close
                 .click()
                 .catch(
                     () => undefined,
                 );
         } else {
-            const xButton =
-                dialog.locator(
-                    'button.close, .btn-close, [data-dismiss="modal"], [data-bs-dismiss="modal"]',
+            await page.keyboard
+                .press(
+                    'Escape',
+                )
+                .catch(
+                    () => undefined,
                 );
-
-            if (
-                await xButton.count()
-            ) {
-                await xButton
-                    .first()
-                    .click()
-                    .catch(
-                        () => undefined,
-                    );
-            } else {
-                await page.keyboard
-                    .press(
-                        'Escape',
-                    )
-                    .catch(
-                        () => undefined,
-                    );
-            }
         }
 
         await page.waitForTimeout(
@@ -1308,310 +1109,16 @@ async function enrichFromRow(
     }
 }
 
-async function getProductTable(
-    page,
-) {
-    const tables =
-        page
-            .locator(
-                'table',
-            )
-            .filter({
-                hasText:
-                    /Nomor Registrasi/i,
-            })
-            .filter({
-                hasText:
-                    /Nama Produk/i,
-            });
-
-    const tableCount =
-        await tables.count();
-
-    let fallbackTable =
-        null;
-
-    for (
-        let i = 0;
-        i < tableCount;
-        i++
-    ) {
-        const table =
-            tables.nth(i);
-
-        const isVisible =
-            await table
-                .isVisible()
-                .catch(
-                    () => false,
-                );
-
-        if (!isVisible) {
-            continue;
-        }
-
-        if (!fallbackTable) {
-            fallbackTable =
-                table;
-        }
-
-        const rowCount =
-            await table
-                .locator(
-                    'tbody tr',
-                )
-                .count();
-
-        if (
-            rowCount > 0
-        ) {
-            return table;
-        }
-    }
-
-    if (fallbackTable) {
-        return fallbackTable;
-    }
-
-    throw new Error(
-        'BPOM product result table was not found.',
-    );
-}
-
-async function pageDiagnostics(
-    page,
-) {
-    return page.evaluate(
-        () => ({
-            url:
-                window.location.href,
-
-            title:
-                document.title,
-
-            readyState:
-                document.readyState,
-
-            tableCount:
-                document
-                    .querySelectorAll(
-                        'table',
-                    )
-                    .length,
-
-            tables: [
-                ...document
-                    .querySelectorAll(
-                        'table',
-                    ),
-            ].map(
-                (
-                    table,
-                    index,
-                ) => ({
-                    index,
-
-                    headers: [
-                        ...table
-                            .querySelectorAll(
-                                'th',
-                            ),
-                    ].map(
-                        (el) =>
-                            (
-                                el.textContent
-                                || ''
-                            )
-                                .replace(
-                                    /\s+/g,
-                                    ' ',
-                                )
-                                .trim(),
-                    ),
-
-                    rowCount:
-                        table
-                            .querySelectorAll(
-                                'tbody tr',
-                            )
-                            .length,
-
-                    textPreview:
-                        (
-                            table.textContent
-                            || ''
-                        )
-                            .replace(
-                                /\s+/g,
-                                ' ',
-                            )
-                            .trim()
-                            .slice(
-                                0,
-                                500,
-                            ),
-                }),
-            ),
-
-            visibleButtons: [
-                ...document
-                    .querySelectorAll(
-                        'button',
-                    ),
-            ]
-                .filter(
-                    (el) => {
-                        const style =
-                            window
-                                .getComputedStyle(
-                                    el,
-                                );
-
-                        return (
-                            style.display
-                                !== 'none'
-                            && style.visibility
-                                !== 'hidden'
-                        );
-                    },
-                )
-                .map(
-                    (el) =>
-                        (
-                            el.textContent
-                            || ''
-                        )
-                            .replace(
-                                /\s+/g,
-                                ' ',
-                            )
-                            .trim(),
-                )
-                .filter(
-                    Boolean,
-                )
-                .slice(
-                    0,
-                    30,
-                ),
-
-            bodyPreview:
-                (
-                    document.body
-                        ?.innerText
-                    || ''
-                )
-                    .replace(
-                        /\s+/g,
-                        ' ',
-                    )
-                    .trim()
-                    .slice(
-                        0,
-                        1500,
-                    ),
-        }),
-    );
-}
-
-async function saveDebugArtifacts(
-    page,
-    job,
-    stage,
-    logInstance,
-) {
-    const id =
-        crypto
-            .createHash(
-                'md5',
-            )
-            .update(
-                `${job.kind}:${job.value}:${stage}`,
-            )
-            .digest(
-                'hex',
-            )
-            .slice(
-                0,
-                12,
-            );
-
-    const prefix =
-        `DEBUG_${stage}_${id}`;
-
-    try {
-        const diagnostics =
-            await pageDiagnostics(
-                page,
-            );
-
-        await Actor.setValue(
-            `${prefix}_DIAGNOSTICS`,
-            diagnostics,
-        );
-
-        const html =
-            await page.content();
-
-        await Actor.setValue(
-            `${prefix}_PAGE`,
-            html,
-            {
-                contentType:
-                    'text/html; charset=utf-8',
-            },
-        );
-
-        const screenshot =
-            await page.screenshot({
-                fullPage:
-                    true,
-            });
-
-        await Actor.setValue(
-            `${prefix}_SCREENSHOT`,
-            screenshot,
-            {
-                contentType:
-                    'image/png',
-            },
-        );
-
-        logInstance.info(
-            `Saved debug artifacts with prefix ${prefix}.`,
-            {
-                tableCount:
-                    diagnostics
-                        .tableCount,
-
-                tables:
-                    diagnostics
-                        .tables,
-            },
-        );
-    } catch (error) {
-        logInstance.warning(
-            `Could not save debug artifacts for ${job.kind}=${job.value || '(all)'}.`,
-            {
-                error:
-                    error.message,
-            },
-        );
-    }
-}
-
 async function extractCurrentPage(
     page,
     job,
-    options,
-    crawlerLog,
-) {
-    const {
+    {
         includeDetails,
         maxRemaining,
         requestDelayMs,
-    } = options;
-
+    },
+    crawlerLog,
+) {
     const table =
         await getProductTable(
             page,
@@ -1622,10 +1129,11 @@ async function extractCurrentPage(
             'tbody tr',
         );
 
+    const results =
+        [];
+
     const rowCount =
         await rows.count();
-
-    const results = [];
 
     for (
         let i = 0;
@@ -1639,9 +1147,7 @@ async function extractCurrentPage(
 
         const cells =
             await row
-                .locator(
-                    'td',
-                )
+                .locator('td')
                 .allInnerTexts();
 
         if (
@@ -1650,16 +1156,11 @@ async function extractCurrentPage(
             continue;
         }
 
-        const normalizedCells =
-            cells.map(
-                (value) =>
-                    clean(value),
-            );
-
         if (
             /tidak ada data|no data|data tidak/i
                 .test(
-                    normalizedCells
+                    cells
+                        .map(clean)
                         .join(' '),
                 )
         ) {
@@ -1684,7 +1185,7 @@ async function extractCurrentPage(
                 || '',
             );
 
-        const listRecord = {
+        const list = {
             productType:
                 clean(
                     cells[0],
@@ -1731,52 +1232,42 @@ async function extractCurrentPage(
                 : {};
 
         const record = {
-            ...listRecord,
-
-            ...Object.fromEntries(
-                Object.entries(
-                    detail,
-                ).filter(
-                    ([, value]) =>
-                        clean(value),
-                ),
-            ),
+            ...list,
 
             registrationNumber:
                 clean(
                     detail
                         .registrationNumber
-                    || listRecord
+                    || list
                         .registrationNumber,
+                ),
+
+            issuedDate:
+                clean(
+                    detail
+                        .issuedDate
+                    || list
+                        .issuedDate,
                 ),
 
             productName:
                 clean(
                     detail
                         .productName
-                    || listRecord
+                    || list
                         .productName,
                 ),
 
             brand:
                 clean(
                     detail.brand
-                    || listRecord
-                        .brand,
+                    || list.brand,
                 ),
 
             packaging:
                 clean(
                     detail.packaging
-                    || listRecord
-                        .packaging,
-                ),
-
-            issuedDate:
-                clean(
-                    detail.issuedDate
-                    || listRecord
-                        .issuedDate,
+                    || list.packaging,
                 ),
 
             composition:
@@ -1788,13 +1279,12 @@ async function extractCurrentPage(
             registrant:
                 clean(
                     detail.registrant
-                    || listRecord
-                        .registrant,
+                    || list.registrant,
                 ),
 
             registrantLocation:
                 clean(
-                    listRecord
+                    list
                         .registrantLocation,
                 ),
 
@@ -1813,6 +1303,29 @@ async function extractCurrentPage(
                 clean(
                     detail
                         .issuedBy,
+                ),
+
+            dosageForm:
+                clean(
+                    detail
+                        .dosageForm,
+                ),
+
+            applicationDate:
+                clean(
+                    detail
+                        .applicationDate,
+                ),
+
+            expiryDate:
+                clean(
+                    detail
+                        .expiryDate,
+                ),
+
+            status:
+                clean(
+                    detail.status,
                 ),
 
             category:
@@ -1837,15 +1350,13 @@ async function extractCurrentPage(
         };
 
         if (
-            !record
+            record
                 .registrationNumber
         ) {
-            continue;
+            results.push(
+                record,
+            );
         }
-
-        results.push(
-            record,
-        );
     }
 
     return results;
@@ -1853,8 +1364,7 @@ async function extractCurrentPage(
 
 async function clickNext(
     page,
-    requestDelayMs,
-    crawlerLog,
+    delay,
 ) {
     const next =
         await visibleLocator(
@@ -1877,18 +1387,14 @@ async function clickNext(
             .catch(
                 () => false,
             )
-        || (
-            await next
-                .getAttribute(
-                    'disabled',
-                )
-        ) !== null
-        || (
-            await next
-                .getAttribute(
-                    'aria-disabled',
-                )
-        ) === 'true';
+        || await next
+            .getAttribute(
+                'disabled',
+            ) !== null
+        || await next
+            .getAttribute(
+                'aria-disabled',
+            ) === 'true';
 
     if (disabled) {
         return false;
@@ -1921,28 +1427,23 @@ async function clickNext(
     await sleep(
         Math.max(
             300,
-            requestDelayMs,
+            delay,
         ),
     );
 
-    const changed =
-        await page
-            .waitForFunction(
-                (previous) => {
-                    const tables = [
-                        ...document
-                            .querySelectorAll(
-                                'table',
-                            ),
-                    ];
-
-                    for (
-                        const tableEl
-                        of tables
-                    ) {
+    return page
+        .waitForFunction(
+            (previous) =>
+                [
+                    ...document
+                        .querySelectorAll(
+                            'table',
+                        ),
+                ].some(
+                    (table) => {
                         const headers =
                             (
-                                tableEl
+                                table
                                     .querySelector(
                                         'thead',
                                     )
@@ -1957,26 +1458,19 @@ async function clickNext(
 
                         if (
                             !/Nomor Registrasi/i
-                                .test(
-                                    headers,
-                                )
+                                .test(headers)
                             || !/Nama Produk/i
-                                .test(
-                                    headers,
-                                )
+                                .test(headers)
                         ) {
-                            continue;
+                            return false;
                         }
-
-                        const first =
-                            tableEl
-                                .querySelector(
-                                    'tbody tr',
-                                );
 
                         const current =
                             (
-                                first
+                                table
+                                    .querySelector(
+                                        'tbody tr',
+                                    )
                                     ?.textContent
                                 || ''
                             )
@@ -1986,46 +1480,32 @@ async function clickNext(
                                 )
                                 .trim();
 
-                        if (
-                            Boolean(
-                                current,
-                            )
+                        return (
+                            current
                             && current
                                 !== previous
-                        ) {
-                            return true;
-                        }
-                    }
-
-                    return false;
-                },
-                before,
-                {
-                    timeout:
-                        15000,
-                },
-            )
-            .then(
-                () => true,
-            )
-            .catch(
-                () => false,
-            );
-
-    if (!changed) {
-        crawlerLog.debug(
-            'Next page did not visibly change; stopping pagination to avoid a loop.',
+                        );
+                    },
+                ),
+            before,
+            {
+                timeout:
+                    15000,
+            },
+        )
+        .then(
+            () => true,
+        )
+        .catch(
+            () => false,
         );
-    }
-
-    return changed;
 }
 
 function diffFields(
     previous,
     current,
 ) {
-    const fields = [
+    return [
         'productName',
         'brand',
         'registrant',
@@ -2040,9 +1520,7 @@ function diffFields(
         'issuedDate',
         'expiryDate',
         'status',
-    ];
-
-    return fields.filter(
+    ].filter(
         (key) =>
             clean(
                 previous?.[key],
@@ -2062,18 +1540,18 @@ function shouldEmit(
     ) {
         return (
             eventType
-                === 'NEW'
+            === 'NEW'
         );
     }
 
     if (
         mode === 'changes'
     ) {
-        return (
-            eventType
-                === 'NEW'
-            || eventType
-                === 'CHANGED'
+        return [
+            'NEW',
+            'CHANGED',
+        ].includes(
+            eventType,
         );
     }
 
@@ -2091,18 +1569,23 @@ await Actor.main(
                 input,
             );
 
+        const watchSignature =
+            buildWatchSignature(
+                jobs,
+            );
+
         const maxItemsPerQuery =
             Number(
                 input
                     .maxItemsPerQuery
-                ?? 100,
+                ?? 0,
             );
 
         const maxPagesPerQuery =
             Number(
                 input
                     .maxPagesPerQuery
-                ?? 20,
+                ?? 100,
             );
 
         const includeDetails =
@@ -2117,19 +1600,30 @@ await Actor.main(
 
         const emit =
             input.emit
-            ?? 'all';
+            ?? 'changes';
 
         const requestDelayMs =
             Number(
                 input
                     .requestDelayMs
-                ?? 500,
+                ?? 800,
+            );
+
+        const allowPartialSnapshotUpdate =
+            Boolean(
+                input
+                    .allowPartialSnapshotUpdate,
             );
 
         const debug =
             Boolean(
                 input.debug,
             );
+
+        const itemLimit =
+            maxItemsPerQuery > 0
+                ? maxItemsPerQuery
+                : Infinity;
 
         if (debug) {
             log.setLevel(
@@ -2153,12 +1647,10 @@ await Actor.main(
 
                 maxPagesPerQuery,
 
+                allowPartialSnapshotUpdate,
+
                 debug,
             },
-        );
-
-        log.info(
-            `Starting ${jobs.length} BPOM cosmetics query job(s).`,
         );
 
         const collected =
@@ -2167,13 +1659,16 @@ await Actor.main(
         const failedJobs =
             [];
 
+        const querySummaries =
+            new Map();
+
         const crawler =
             new PlaywrightCrawler({
                 maxConcurrency:
                     1,
 
                 requestHandlerTimeoutSecs:
-                    300,
+                    600,
 
                 navigationTimeoutSecs:
                     90,
@@ -2198,12 +1693,13 @@ await Actor.main(
                         },
                         gotoOptions,
                     ) => {
-                        const retryCount =
-                            request.retryCount
+                        const retry =
+                            request
+                                .retryCount
                             ?? 0;
 
                         if (
-                            retryCount > 0
+                            retry > 0
                         ) {
                             const delayMs =
                                 Math.min(
@@ -2212,7 +1708,7 @@ await Actor.main(
                                         * (
                                             2
                                             ** (
-                                                retryCount
+                                                retry
                                                 - 1
                                             )
                                         ),
@@ -2221,7 +1717,8 @@ await Actor.main(
                             crawlerLog.warning(
                                 `Retrying BPOM after ${delayMs} ms backoff.`,
                                 {
-                                    retryCount,
+                                    retryCount:
+                                        retry,
                                 },
                             );
 
@@ -2265,7 +1762,7 @@ await Actor.main(
                             .job;
 
                     crawlerLog.info(
-                        `Querying BPOM: ${job.kind}=${job.value || '(all)'}`,
+                        `Querying BPOM: ${job.kind}=${job.value}`,
                     );
 
                     await waitForTable(
@@ -2283,30 +1780,34 @@ await Actor.main(
                         page,
                     );
 
-                    if (debug) {
-                        const diagnostics =
-                            await pageDiagnostics(
-                                page,
-                            );
-
-                        crawlerLog.info(
-                            'BPOM page diagnostics after filter.',
-                            diagnostics,
-                        );
-                    }
-
                     let pageNumber =
                         1;
 
                     let queryCount =
                         0;
 
+                    let stopReason =
+                        'unknown';
+
+                    let coverageComplete =
+                        false;
+
                     while (
                         pageNumber
                             <= maxPagesPerQuery
                         && queryCount
-                            < maxItemsPerQuery
+                            < itemLimit
                     ) {
+                        const maxRemaining =
+                            Number
+                                .isFinite(
+                                    itemLimit,
+                                )
+                                ? itemLimit
+                                    - queryCount
+                                : Number
+                                    .MAX_SAFE_INTEGER;
+
                         const items =
                             await extractCurrentPage(
                                 page,
@@ -2314,9 +1815,7 @@ await Actor.main(
                                 {
                                     includeDetails,
 
-                                    maxRemaining:
-                                        maxItemsPerQuery
-                                        - queryCount,
+                                    maxRemaining,
 
                                     requestDelayMs,
                                 },
@@ -2327,8 +1826,7 @@ await Actor.main(
                             const item
                             of items
                         ) {
-                            queryCount +=
-                                1;
+                            queryCount++;
 
                             const key =
                                 item
@@ -2348,10 +1846,11 @@ await Actor.main(
                                     );
                             } else {
                                 const matches =
-                                    Array.isArray(
-                                        existing
-                                            .matches,
-                                    )
+                                    Array
+                                        .isArray(
+                                            existing
+                                                .matches,
+                                        )
                                         ? existing
                                             .matches
                                         : [
@@ -2361,16 +1860,31 @@ await Actor.main(
                                             Boolean,
                                         );
 
-                                matches.push(
-                                    item
-                                        .matchedBy,
-                                );
+                                if (
+                                    !matches.some(
+                                        (match) =>
+                                            match.type
+                                                === item
+                                                    .matchedBy
+                                                    .type
+                                            && match.value
+                                                === item
+                                                    .matchedBy
+                                                    .value,
+                                    )
+                                ) {
+                                    matches.push(
+                                        item
+                                            .matchedBy,
+                                    );
+                                }
 
                                 collected
                                     .set(
                                         key,
                                         {
                                             ...existing,
+
                                             matches,
                                         },
                                     );
@@ -2378,7 +1892,7 @@ await Actor.main(
 
                             if (
                                 queryCount
-                                    >= maxItemsPerQuery
+                                    >= itemLimit
                             ) {
                                 break;
                             }
@@ -2386,8 +1900,21 @@ await Actor.main(
 
                         if (
                             queryCount
-                                >= maxItemsPerQuery
+                                >= itemLimit
                         ) {
+                            stopReason =
+                                'item_limit';
+
+                            break;
+                        }
+
+                        if (
+                            pageNumber
+                                >= maxPagesPerQuery
+                        ) {
+                            stopReason =
+                                'page_limit';
+
                             break;
                         }
 
@@ -2395,32 +1922,53 @@ await Actor.main(
                             await clickNext(
                                 page,
                                 requestDelayMs,
-                                crawlerLog,
                             );
 
                         if (!moved) {
+                            coverageComplete =
+                                true;
+
+                            stopReason =
+                                'end_of_results';
+
                             break;
                         }
 
-                        pageNumber +=
-                            1;
+                        pageNumber++;
                     }
 
-                    if (
-                        queryCount
-                            === 0
-                        && debug
-                    ) {
-                        await saveDebugArtifacts(
-                            page,
-                            job,
-                            'ZERO_RESULTS',
-                            crawlerLog,
+                    const querySummary = {
+                        queryId:
+                            request
+                                .uniqueKey,
+
+                        kind:
+                            job.kind,
+
+                        value:
+                            job.value,
+
+                        recordsCollected:
+                            queryCount,
+
+                        pagesVisited:
+                            pageNumber,
+
+                        coverageComplete,
+
+                        stopReason,
+                    };
+
+                    querySummaries
+                        .set(
+                            request
+                                .uniqueKey,
+                            querySummary,
                         );
-                    }
 
                     crawlerLog.info(
-                        `Collected ${queryCount} row(s) for ${job.kind}=${job.value || '(all)'}.`,
+                        `Collected ${queryCount} row(s) for ${job.kind}=${job.value}.`,
+                        querySummary,
                     );
                 },
 
@@ -2447,74 +1995,79 @@ await Actor.main(
                             ),
                     });
 
+                    querySummaries.set(
+                        request
+                            .uniqueKey,
+                        {
+                            queryId:
+                                request
+                                    .uniqueKey,
+
+                            kind:
+                                job.kind,
+
+                            value:
+                                job.value,
+
+                            recordsCollected:
+                                0,
+
+                            pagesVisited:
+                                0,
+
+                            coverageComplete:
+                                false,
+
+                            stopReason:
+                                'request_failed',
+                        },
+                    );
+
                     crawlerLog.error(
-                        `Query failed: ${job.kind}=${job.value || '(all)'}`,
+                        `Query failed: ${job.kind}=${job.value}`,
                         {
                             error:
                                 error
                                     ?.message,
                         },
                     );
-
-                    if (debug) {
-                        const key =
-                            `DEBUG_FAILED_${
-                                crypto
-                                    .createHash(
-                                        'md5',
-                                    )
-                                    .update(
-                                        request
-                                            .uniqueKey,
-                                    )
-                                    .digest(
-                                        'hex',
-                                    )
-                            }`;
-
-                        await Actor
-                            .setValue(
-                                key,
-                                {
-                                    url:
-                                        request
-                                            .url,
-
-                                    job,
-
-                                    error:
-                                        error
-                                            ?.message
-                                        || String(
-                                            error,
-                                        ),
-
-                                    at:
-                                        isoNow(),
-                                },
-                            );
-                    }
                 },
             });
 
-        const requests =
+        await crawler.run(
             jobs.map(
                 (job) => ({
                     url:
                         BASE_URL,
 
                     uniqueKey:
-                        `${job.kind}:${job.value || 'all'}`,
+                        `${job.kind}:${job.value}`,
 
                     userData: {
                         job,
                     },
                 }),
+            ),
+        );
+
+        const querySummaryList =
+            jobs.map(
+                (job) =>
+                    querySummaries
+                        .get(
+                            `${job.kind}:${job.value}`,
+                        ),
             );
 
-        await crawler.run(
-            requests,
-        );
+        const overallCoverageComplete =
+            failedJobs.length === 0
+            && querySummaryList
+                .every(
+                    (query) =>
+                        query
+                            ?.coverageComplete
+                        === true,
+                );
 
         const stateStoreName =
             clean(
@@ -2525,7 +2078,8 @@ await Actor.main(
 
         const stateKey =
             clean(
-                input.stateKey
+                input
+                    .stateKey
                 || 'default',
             )
                 .replace(
@@ -2539,31 +2093,67 @@ await Actor.main(
                     stateStoreName,
                 );
 
-        const previousState =
+        const rawPrevious =
             detectChanges
-                ? (
-                    await stateStore
-                        .getValue(
-                            `SNAPSHOT_${stateKey}`,
-                        )
-                    ?? {
-                        version:
-                            SNAPSHOT_VERSION,
+                ? await stateStore
+                    .getValue(
+                        `SNAPSHOT_${stateKey}`,
+                    )
+                : null;
 
-                        records:
-                            {},
-                    }
-                )
-                : {
-                    version:
-                        SNAPSHOT_VERSION,
+        let baselineReset =
+            false;
 
-                    records:
-                        {},
-                };
+        let baselineResetReason =
+            '';
+
+        let previousState =
+            rawPrevious
+            ?? {
+                version:
+                    SNAPSHOT_VERSION,
+
+                watchSignature,
+
+                records:
+                    {},
+            };
+
+        if (
+            detectChanges
+            && rawPrevious
+                ?.watchSignature
+            && rawPrevious
+                .watchSignature
+                !== watchSignature
+        ) {
+            baselineReset =
+                true;
+
+            baselineResetReason =
+                'WATCHLIST_CHANGED';
+
+            previousState = {
+                version:
+                    SNAPSHOT_VERSION,
+
+                watchSignature,
+
+                records:
+                    {},
+            };
+
+            log.warning(
+                'Watchlist changed for this stateKey; starting a fresh baseline.',
+                {
+                    stateKey,
+                },
+            );
+        }
 
         const previousRecords =
-            previousState.records
+            previousState
+                .records
             ?? {};
 
         const nextRecords =
@@ -2576,6 +2166,9 @@ await Actor.main(
             0;
 
         let unchangedCount =
+            0;
+
+        let snapshotCount =
             0;
 
         let emittedCount =
@@ -2597,24 +2190,29 @@ await Actor.main(
             const previousEntry =
                 previousRecords[id];
 
-            let eventType =
-                'UNCHANGED';
+            let eventType;
 
             let changedFields =
                 [];
 
-            let previous =
-                undefined;
+            let previous;
 
-            if (
-                !detectChanges
-                || !previousEntry
+            if (!detectChanges) {
+                eventType =
+                    'SNAPSHOT';
+
+                snapshotCount++;
+            } else if (
+                !previousEntry
             ) {
                 eventType =
                     'NEW';
+
+                newCount++;
             } else if (
-                previousEntry.hash
-                    !== hash
+                previousEntry
+                    .hash
+                !== hash
             ) {
                 eventType =
                     'CHANGED';
@@ -2629,23 +2227,13 @@ await Actor.main(
                             .record,
                         record,
                     );
-            }
 
-            if (
-                eventType
-                    === 'NEW'
-            ) {
-                newCount +=
-                    1;
-            } else if (
-                eventType
-                    === 'CHANGED'
-            ) {
-                changedCount +=
-                    1;
+                changedCount++;
             } else {
-                unchangedCount +=
-                    1;
+                eventType =
+                    'UNCHANGED';
+
+                unchangedCount++;
             }
 
             const output = {
@@ -2678,21 +2266,50 @@ await Actor.main(
                         output,
                     );
 
-                emittedCount +=
-                    1;
+                emittedCount++;
             }
 
             nextRecords[id] = {
                 hash,
+
                 record,
             };
         }
 
-        if (
+        const previousIds =
+            Object.keys(
+                previousRecords,
+            );
+
+        const currentIds =
+            new Set(
+                Object.keys(
+                    nextRecords,
+                ),
+            );
+
+        const possiblyMissing =
+            detectChanges
+            && !baselineReset
+            && overallCoverageComplete
+                ? previousIds
+                    .filter(
+                        (id) =>
+                            !currentIds
+                                .has(id),
+                    )
+                : [];
+
+        const snapshotCanUpdate =
             detectChanges
             && failedJobs.length
                 === 0
-        ) {
+            && (
+                overallCoverageComplete
+                || allowPartialSnapshotUpdate
+            );
+
+        if (snapshotCanUpdate) {
             await stateStore
                 .setValue(
                     `SNAPSHOT_${stateKey}`,
@@ -2700,8 +2317,13 @@ await Actor.main(
                         version:
                             SNAPSHOT_VERSION,
 
+                        watchSignature,
+
                         updatedAt:
                             isoNow(),
+
+                        coverageComplete:
+                            overallCoverageComplete,
 
                         records:
                             nextRecords,
@@ -2709,43 +2331,91 @@ await Actor.main(
                 );
         } else if (
             detectChanges
-            && failedJobs.length
-                > 0
         ) {
             log.warning(
-                'Snapshot was NOT updated because one or more query jobs failed. This prevents false change baselines.',
+                'Snapshot NOT updated because coverage was incomplete or a query failed.',
+                {
+                    overallCoverageComplete,
+
+                    failedJobs:
+                        failedJobs
+                            .length,
+
+                    allowPartialSnapshotUpdate,
+                },
             );
         }
 
         const summary = {
-            totalUniqueRecords:
-                collected.size,
+            version:
+                '0.2.0',
 
-            emittedRecords:
-                emittedCount,
+            monitoringSummary: {
+                watchlistQueries:
+                    jobs.length,
 
-            newRecords:
-                newCount,
+                failedQueries:
+                    failedJobs
+                        .length,
 
-            changedRecords:
-                changedCount,
+                coverageComplete:
+                    overallCoverageComplete,
 
-            unchangedRecords:
-                unchangedCount,
+                productsChecked:
+                    collected.size,
 
-            queryJobs:
-                jobs.length,
+                previousSnapshotProducts:
+                    Object.keys(
+                        previousRecords,
+                    ).length,
 
-            failedJobs,
+                currentSnapshotProducts:
+                    Object.keys(
+                        nextRecords,
+                    ).length,
+
+                newProducts:
+                    newCount,
+
+                changedProducts:
+                    changedCount,
+
+                unchangedProducts:
+                    unchangedCount,
+
+                snapshotProducts:
+                    snapshotCount,
+
+                emittedRecords:
+                    emittedCount,
+
+                possiblyMissingProducts:
+                    possiblyMissing
+                        .length,
+            },
+
+            querySummaries:
+                querySummaryList,
+
+            possiblyMissingRegistrationNumbers:
+                possiblyMissing
+                    .slice(
+                        0,
+                        100,
+                    ),
+
+            baselineReset,
+
+            baselineResetReason,
 
             snapshotUpdated:
-                detectChanges
-                && failedJobs.length
-                    === 0,
+                snapshotCanUpdate,
 
             stateStoreName,
 
             stateKey,
+
+            watchSignature,
 
             finishedAt:
                 isoNow(),
