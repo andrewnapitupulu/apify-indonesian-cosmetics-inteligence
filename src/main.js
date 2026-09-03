@@ -147,6 +147,35 @@ function stableHash(record) {
         .digest('hex');
 }
 
+function basicHash(record) {
+    const fields = [
+        'registrationNumber',
+        'issuedDate',
+        'productName',
+        'brand',
+        'packaging',
+        'registrant',
+        'registrantLocation',
+    ];
+
+    const payload =
+        Object.fromEntries(
+            fields.map(
+                (key) => [
+                    key,
+                    clean(record[key]),
+                ],
+            ),
+        );
+
+    return crypto
+        .createHash('sha256')
+        .update(
+            JSON.stringify(payload),
+        )
+        .digest('hex');
+}
+
 function normalizeKey(label) {
     return clean(label)
         .toLowerCase()
@@ -1113,9 +1142,12 @@ async function extractCurrentPage(
     page,
     job,
     {
-        includeDetails,
+        detailStrategy,
+        detectChanges,
+        previousRecords,
         maxRemaining,
         requestDelayMs,
+        detailStats,
     },
     crawlerLog,
 ) {
@@ -1221,8 +1253,66 @@ async function extractCurrentPage(
                     .registrantLocation,
         };
 
+        const currentBasicHash =
+            basicHash(
+                list,
+            );
+
+        const previousEntry =
+            previousRecords[
+                list.registrationNumber
+            ];
+
+        const previousRecord =
+            previousEntry?.record
+            ?? null;
+
+        const previousBasicHash =
+            previousEntry?.basicHash
+            || (
+                previousRecord
+                    ? basicHash(
+                        previousRecord,
+                    )
+                    : ''
+            );
+
+        const listingChanged =
+            previousRecord
+                ? (
+                    previousBasicHash
+                    !== currentBasicHash
+                )
+                : true;
+
+        let shouldFetchDetail =
+            false;
+
+        if (
+            detailStrategy === 'always'
+        ) {
+            shouldFetchDetail =
+                true;
+        } else if (
+            detailStrategy === 'changesOnly'
+            && detectChanges
+            && (
+                !previousRecord
+                || listingChanged
+            )
+        ) {
+            shouldFetchDetail =
+                true;
+        }
+
+        if (shouldFetchDetail) {
+            detailStats.requested++;
+        } else {
+            detailStats.skipped++;
+        }
+
         const detail =
-            includeDetails
+            shouldFetchDetail
                 ? await enrichFromRow(
                     page,
                     row,
@@ -1231,8 +1321,38 @@ async function extractCurrentPage(
                 )
                 : {};
 
+        const carriedDetail = {};
+
+        if (previousRecord) {
+            const carryFields = [
+                'composition',
+                'cosmeticsManufacturer',
+                'kits',
+                'issuedBy',
+                'dosageForm',
+                'applicationDate',
+                'expiryDate',
+                'status',
+            ];
+
+            for (
+                const field
+                of carryFields
+            ) {
+                if (
+                    previousRecord[field]
+                    !== undefined
+                ) {
+                    carriedDetail[field] =
+                        previousRecord[field];
+                }
+            }
+        }
+
         const record = {
             ...list,
+
+            ...carriedDetail,
 
             registrationNumber:
                 clean(
@@ -1272,8 +1392,8 @@ async function extractCurrentPage(
 
             composition:
                 clean(
-                    detail
-                        .composition,
+                    detail.composition
+                    || carriedDetail.composition,
                 ),
 
             registrant:
@@ -1290,42 +1410,44 @@ async function extractCurrentPage(
 
             cosmeticsManufacturer:
                 clean(
-                    detail
-                        .cosmeticsManufacturer,
+                    detail.cosmeticsManufacturer
+                    || carriedDetail.cosmeticsManufacturer,
                 ),
 
             kits:
                 clean(
-                    detail.kits,
+                    detail.kits
+                    || carriedDetail.kits,
                 ),
 
             issuedBy:
                 clean(
-                    detail
-                        .issuedBy,
+                    detail.issuedBy
+                    || carriedDetail.issuedBy,
                 ),
 
             dosageForm:
                 clean(
-                    detail
-                        .dosageForm,
+                    detail.dosageForm
+                    || carriedDetail.dosageForm,
                 ),
 
             applicationDate:
                 clean(
-                    detail
-                        .applicationDate,
+                    detail.applicationDate
+                    || carriedDetail.applicationDate,
                 ),
 
             expiryDate:
                 clean(
-                    detail
-                        .expiryDate,
+                    detail.expiryDate
+                    || carriedDetail.expiryDate,
                 ),
 
             status:
                 clean(
-                    detail.status,
+                    detail.status
+                    || carriedDetail.status,
                 ),
 
             category:
@@ -1347,6 +1469,9 @@ async function extractCurrentPage(
 
             scrapedAt:
                 isoNow(),
+
+            __basicHash:
+                currentBasicHash,
         };
 
         if (
@@ -1588,10 +1713,29 @@ await Actor.main(
                 ?? 100,
             );
 
-        const includeDetails =
-            input
-                .includeDetails
-            !== false;
+        const detailStrategy =
+            clean(
+                input.detailStrategy
+                || 'changesOnly',
+            );
+
+        const allowedDetailStrategies =
+            new Set([
+                'always',
+                'changesOnly',
+                'never',
+            ]);
+
+        if (
+            !allowedDetailStrategies
+                .has(
+                    detailStrategy,
+                )
+        ) {
+            throw new Error(
+                `Invalid detailStrategy: ${detailStrategy}`,
+            );
+        }
 
         const detectChanges =
             input
@@ -1637,7 +1781,7 @@ await Actor.main(
                 jobs:
                     jobs.length,
 
-                includeDetails,
+                detailStrategy,
 
                 detectChanges,
 
@@ -1662,13 +1806,63 @@ await Actor.main(
         const querySummaries =
             new Map();
 
+        const detailStats = {
+            requested: 0,
+            skipped: 0,
+        };
+
+        const stateStoreName =
+            clean(
+                input
+                    .stateStoreName
+                || 'indonesian-cosmetics-intelligence-state',
+            );
+
+        const stateKey =
+            clean(
+                input
+                    .stateKey
+                || 'default',
+            )
+                .replace(
+                    /[^a-zA-Z0-9._-]/g,
+                    '_',
+                );
+
+        const stateStore =
+            await Actor
+                .openKeyValueStore(
+                    stateStoreName,
+                );
+
+        const rawPreviousState =
+            detectChanges
+                ? await stateStore
+                    .getValue(
+                        `SNAPSHOT_${stateKey}`,
+                    )
+                : null;
+
+        const previousRecordsForDetail =
+            (
+                detectChanges
+                && rawPreviousState
+                    ?.watchSignature
+                    === watchSignature
+            )
+                ? (
+                    rawPreviousState.records
+                    ?? {}
+                )
+                : {};
+
         const crawler =
             new PlaywrightCrawler({
                 maxConcurrency:
                     1,
 
                 requestHandlerTimeoutSecs:
-                    600,
+                    1800,
 
                 navigationTimeoutSecs:
                     90,
@@ -1786,6 +1980,15 @@ await Actor.main(
                     let queryCount =
                         0;
 
+                    const seenRegistrationNumbers =
+                        new Set();
+
+                    const duplicateRegistrationNumbers =
+                        new Set();
+
+                    let duplicateRows =
+                        0;
+
                     let stopReason =
                         'unknown';
 
@@ -1813,11 +2016,18 @@ await Actor.main(
                                 page,
                                 job,
                                 {
-                                    includeDetails,
+                                    detailStrategy,
+
+                                    detectChanges,
+
+                                    previousRecords:
+                                        previousRecordsForDetail,
 
                                     maxRemaining,
 
                                     requestDelayMs,
+
+                                    detailStats,
                                 },
                                 crawlerLog,
                             );
@@ -1831,6 +2041,19 @@ await Actor.main(
                             const key =
                                 item
                                     .registrationNumber;
+
+                            if (
+                                seenRegistrationNumbers
+                                    .has(key)
+                            ) {
+                                duplicateRows++;
+
+                                duplicateRegistrationNumbers
+                                    .add(key);
+                            } else {
+                                seenRegistrationNumbers
+                                    .add(key);
+                            }
 
                             const existing =
                                 collected
@@ -1948,8 +2171,22 @@ await Actor.main(
                         value:
                             job.value,
 
-                        recordsCollected:
+                        rawRowsCollected:
                             queryCount,
+
+                        uniqueProducts:
+                            seenRegistrationNumbers
+                                .size,
+
+                        duplicateRows,
+
+                        duplicateRegistrationNumbers:
+                            [
+                                ...duplicateRegistrationNumbers,
+                            ].slice(
+                                0,
+                                100,
+                            ),
 
                         pagesVisited:
                             pageNumber,
@@ -1967,7 +2204,7 @@ await Actor.main(
                         );
 
                     crawlerLog.info(
-                        `Collected ${queryCount} row(s) for ${job.kind}=${job.value}.`,
+                        `Collected ${queryCount} raw row(s) / ${seenRegistrationNumbers.size} unique product(s) for ${job.kind}=${job.value}.`,
                         querySummary,
                     );
                 },
@@ -2009,8 +2246,17 @@ await Actor.main(
                             value:
                                 job.value,
 
-                            recordsCollected:
+                            rawRowsCollected:
                                 0,
+
+                            uniqueProducts:
+                                0,
+
+                            duplicateRows:
+                                0,
+
+                            duplicateRegistrationNumbers:
+                                [],
 
                             pagesVisited:
                                 0,
@@ -2069,38 +2315,6 @@ await Actor.main(
                         === true,
                 );
 
-        const stateStoreName =
-            clean(
-                input
-                    .stateStoreName
-                || 'indonesian-cosmetics-intelligence-state',
-            );
-
-        const stateKey =
-            clean(
-                input
-                    .stateKey
-                || 'default',
-            )
-                .replace(
-                    /[^a-zA-Z0-9._-]/g,
-                    '_',
-                );
-
-        const stateStore =
-            await Actor
-                .openKeyValueStore(
-                    stateStoreName,
-                );
-
-        const rawPrevious =
-            detectChanges
-                ? await stateStore
-                    .getValue(
-                        `SNAPSHOT_${stateKey}`,
-                    )
-                : null;
-
         let baselineReset =
             false;
 
@@ -2108,7 +2322,7 @@ await Actor.main(
             '';
 
         let previousState =
-            rawPrevious
+            rawPreviousState
             ?? {
                 version:
                     SNAPSHOT_VERSION,
@@ -2121,9 +2335,9 @@ await Actor.main(
 
         if (
             detectChanges
-            && rawPrevious
+            && rawPreviousState
                 ?.watchSignature
-            && rawPrevious
+            && rawPreviousState
                 .watchSignature
                 !== watchSignature
         ) {
@@ -2175,9 +2389,21 @@ await Actor.main(
             0;
 
         for (
-            const record
+            const internalRecord
             of collected.values()
         ) {
+            const currentBasicHash =
+                internalRecord.__basicHash
+                || basicHash(
+                    internalRecord,
+                );
+
+            const record = {
+                ...internalRecord,
+            };
+
+            delete record.__basicHash;
+
             const id =
                 record
                     .registrationNumber;
@@ -2272,6 +2498,9 @@ await Actor.main(
             nextRecords[id] = {
                 hash,
 
+                basicHash:
+                    currentBasicHash,
+
                 record,
             };
         }
@@ -2325,6 +2554,8 @@ await Actor.main(
                         coverageComplete:
                             overallCoverageComplete,
 
+                        detailStrategy,
+
                         records:
                             nextRecords,
                     },
@@ -2346,9 +2577,35 @@ await Actor.main(
             );
         }
 
+        const totalRawRowsCollected =
+            querySummaryList
+                .reduce(
+                    (total, query) =>
+                        total
+                        + (
+                            query
+                                ?.rawRowsCollected
+                            ?? 0
+                        ),
+                    0,
+                );
+
+        const totalDuplicateRows =
+            querySummaryList
+                .reduce(
+                    (total, query) =>
+                        total
+                        + (
+                            query
+                                ?.duplicateRows
+                            ?? 0
+                        ),
+                    0,
+                );
+
         const summary = {
             version:
-                '0.2.0',
+                '0.2.1',
 
             monitoringSummary: {
                 watchlistQueries:
@@ -2360,6 +2617,23 @@ await Actor.main(
 
                 coverageComplete:
                     overallCoverageComplete,
+
+                detailStrategy,
+
+                detailFetches:
+                    detailStats.requested,
+
+                detailSkips:
+                    detailStats.skipped,
+
+                rawRowsCollected:
+                    totalRawRowsCollected,
+
+                uniqueProducts:
+                    collected.size,
+
+                duplicateRows:
+                    totalDuplicateRows,
 
                 productsChecked:
                     collected.size,
