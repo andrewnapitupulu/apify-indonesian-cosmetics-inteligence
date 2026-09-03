@@ -1,6 +1,6 @@
 {
   "title": "Indonesian Cosmetics Intelligence",
-  "description": "Monitor BPOM cosmetics records for brands, registrants, products, registration numbers, or composition keywords and detect new or changed products across runs.",
+  "description": "Monitor BPOM cosmetics records for brands, registrants, products, registration numbers, or composition keywords and detect trustworthy new or changed products across runs.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
@@ -75,22 +75,40 @@
       "editor": "number"
     },
     "detailStrategy": {
-  "title": "Product detail strategy",
-  "type": "string",
-  "description": "Controls when the Actor opens BPOM product detail. changesOnly is recommended for production monitoring.",
-  "editor": "select",
-  "enum": [
-    "always",
-    "changesOnly",
-    "never"
-  ],
-  "enumTitles": [
-    "Always open product details",
-    "Only for new or changed products",
-    "Never open product details"
-  ],
-  "default": "changesOnly"
-},
+      "title": "Product detail strategy",
+      "type": "string",
+      "description": "Controls when the Actor opens BPOM product detail. changesOnly is recommended for production monitoring.",
+      "editor": "select",
+      "enum": [
+        "always",
+        "changesOnly",
+        "never"
+      ],
+      "enumTitles": [
+        "Always open product details",
+        "Only for new or changed products",
+        "Never open product details"
+      ],
+      "default": "changesOnly"
+    },
+    "baselineWarmupRuns": {
+      "title": "Trusted baseline warm-up runs",
+      "type": "integer",
+      "description": "Number of successful full-coverage runs used to build a trusted union baseline before NEW alerts are enabled. Recommended: 3.",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 3,
+      "editor": "number"
+    },
+    "newProductWindowDays": {
+      "title": "New product issued-date window (days)",
+      "type": "integer",
+      "description": "After the trusted baseline is ready, a first-seen product is classified as NEW only when its BPOM issued date is within this many days. Older or unknown dates are classified as DISCOVERED.",
+      "minimum": 1,
+      "maximum": 365,
+      "default": 30,
+      "editor": "number"
+    },
     "detectChanges": {
       "title": "Detect changes across runs",
       "type": "boolean",
@@ -101,7 +119,7 @@
     "emit": {
       "title": "Records to output",
       "type": "string",
-      "description": "all = every record; changes = NEW or CHANGED only; new = NEW only. For scheduled monitoring, changes is recommended.",
+      "description": "all = every record; changes = trusted NEW or CHANGED records only; new = trusted NEW only. BASELINE and DISCOVERED records are visible with all but do not trigger changes output.",
       "editor": "select",
       "enum": [
         "all",
@@ -110,8 +128,8 @@
       ],
       "enumTitles": [
         "All records",
-        "New + changed only",
-        "New only"
+        "Trusted new + changed only",
+        "Trusted new only"
       ],
       "default": "changes"
     },
@@ -125,7 +143,7 @@
     "stateKey": {
       "title": "Watchlist state key",
       "type": "string",
-      "description": "Unique key for this watchlist. Keep the same key across scheduled runs. Use a new key when starting a new independent baseline.",
+      "description": "Unique key for this watchlist. Keep the same key across scheduled runs. Use a new key when starting a new independent trusted baseline.",
       "default": "default",
       "editor": "textfield"
     },
@@ -141,7 +159,7 @@
     "allowPartialSnapshotUpdate": {
       "title": "Allow partial snapshot updates",
       "type": "boolean",
-      "description": "Advanced. If enabled, the Actor may update the baseline even when the item/page safety limit prevented full result coverage. Keep disabled for production monitoring.",
+      "description": "Advanced. If enabled, the Actor may update stored observations even when full result coverage was not achieved. Partial runs never advance trusted-baseline readiness. Keep disabled for production monitoring.",
       "default": false,
       "editor": "checkbox"
     },
