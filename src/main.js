@@ -3,96 +3,139 @@ import { Actor, log } from 'apify';
 import { PlaywrightCrawler } from 'crawlee';
 
 const BASE_URL = 'https://cekbpom.pom.go.id/produk-kosmetika';
-const SNAPSHOT_VERSION = 3;
+const SNAPSHOT_VERSION = 4;
+const ACTOR_VERSION = '0.2.3';
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-const clean = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
+const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const isoNow = () => new Date().toISOString();
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function textLines(v) {
-    return String(v ?? '')
+function textLines(value) {
+    return String(value ?? '')
         .split(/\r?\n/)
         .map(clean)
         .filter(Boolean);
 }
 
-function parseRegistrationCell(v) {
-    const t = clean(v);
+function parseRegistrationCell(value) {
+    const text = clean(value);
 
     return {
         registrationNumber:
-            t.match(/\b[A-Z]{2,3}\d{8,}\b/i)?.[0] || '',
+            text.match(/\b[A-Z]{2,3}\d{8,}\b/i)?.[0] || '',
 
         issuedDate:
-            t.match(
+            text.match(
                 /Terbit\s*:\s*(\d{4}-\d{2}-\d{2})/i,
             )?.[1] || '',
     };
 }
 
-function parseProductCell(v) {
-    const lines = textLines(v);
+function parseProductCell(value) {
+    const lines = textLines(value);
 
     let brand = '';
     let packaging = '';
 
-    const name = [];
+    const productNameLines = [];
 
     for (const line of lines) {
         if (/^Merk\s*:/i.test(line)) {
-            brand = clean(
-                line.replace(/^Merk\s*:/i, ''),
-            );
-        } else if (/^Merek\s*:/i.test(line)) {
-            brand = clean(
-                line.replace(/^Merek\s*:/i, ''),
-            );
-        } else if (/^Kemasan\s*:/i.test(line)) {
-            packaging = clean(
-                line.replace(/^Kemasan\s*:/i, ''),
-            );
+            brand =
+                clean(
+                    line.replace(
+                        /^Merk\s*:/i,
+                        '',
+                    ),
+                );
+        } else if (
+            /^Merek\s*:/i.test(
+                line,
+            )
+        ) {
+            brand =
+                clean(
+                    line.replace(
+                        /^Merek\s*:/i,
+                        '',
+                    ),
+                );
+        } else if (
+            /^Kemasan\s*:/i.test(
+                line,
+            )
+        ) {
+            packaging =
+                clean(
+                    line.replace(
+                        /^Kemasan\s*:/i,
+                        '',
+                    ),
+                );
         } else {
-            name.push(line);
+            productNameLines.push(
+                line,
+            );
         }
     }
 
-    const full = clean(v);
+    const fullText =
+        clean(value);
 
     if (!brand) {
         brand =
-            full.match(
+            fullText.match(
                 /Merk\s*:\s*(.*?)(?=Kemasan\s*:|$)/i,
-            )?.[1]?.trim() || '';
+            )?.[1]?.trim()
+            || '';
     }
 
     if (!packaging) {
         packaging =
-            full.match(
+            fullText.match(
                 /Kemasan\s*:\s*(.*)$/i,
-            )?.[1]?.trim() || '';
+            )?.[1]?.trim()
+            || '';
     }
 
     return {
-        productName: clean(
-            name
-                .join(' ')
-                .replace(/Merk\s*:.*$/i, '')
-                .replace(/Merek\s*:.*$/i, ''),
-        ),
+        productName:
+            clean(
+                productNameLines
+                    .join(' ')
+                    .replace(
+                        /Merk\s*:.*$/i,
+                        '',
+                    )
+                    .replace(
+                        /Merek\s*:.*$/i,
+                        '',
+                    ),
+            ),
 
-        brand: clean(brand),
+        brand:
+            clean(brand),
 
-        packaging: clean(packaging),
+        packaging:
+            clean(packaging),
     };
 }
 
-function parseRegistrantCell(v) {
-    const lines = textLines(v);
+function parseRegistrantCell(
+    value,
+) {
+    const lines =
+        textLines(value);
 
-    return lines.length >= 2
-        ? {
+    if (
+        lines.length >= 2
+    ) {
+        return {
             registrant:
-                clean(lines[0]),
+                clean(
+                    lines[0],
+                ),
 
             registrantLocation:
                 clean(
@@ -100,14 +143,16 @@ function parseRegistrantCell(v) {
                         .slice(1)
                         .join(' '),
                 ),
-        }
-        : {
-            registrant:
-                clean(v),
-
-            registrantLocation:
-                '',
         };
+    }
+
+    return {
+        registrant:
+            clean(value),
+
+        registrantLocation:
+            '',
+    };
 }
 
 function stableHash(record) {
@@ -134,17 +179,25 @@ function stableHash(record) {
             fields.map(
                 (key) => [
                     key,
-                    clean(record[key]),
+                    clean(
+                        record[key],
+                    ),
                 ],
             ),
         );
 
     return crypto
-        .createHash('sha256')
-        .update(
-            JSON.stringify(payload),
+        .createHash(
+            'sha256',
         )
-        .digest('hex');
+        .update(
+            JSON.stringify(
+                payload,
+            ),
+        )
+        .digest(
+            'hex',
+        );
 }
 
 function basicHash(record) {
@@ -163,23 +216,33 @@ function basicHash(record) {
             fields.map(
                 (key) => [
                     key,
-                    clean(record[key]),
+                    clean(
+                        record[key],
+                    ),
                 ],
             ),
         );
 
     return crypto
-        .createHash('sha256')
-        .update(
-            JSON.stringify(payload),
+        .createHash(
+            'sha256',
         )
-        .digest('hex');
+        .update(
+            JSON.stringify(
+                payload,
+            ),
+        )
+        .digest(
+            'hex',
+        );
 }
 
 function normalizeKey(label) {
     return clean(label)
         .toLowerCase()
-        .normalize('NFKD')
+        .normalize(
+            'NFKD',
+        )
         .replace(
             /[^a-z0-9]+/g,
             ' ',
@@ -187,45 +250,71 @@ function normalizeKey(label) {
         .trim();
 }
 
-function mapDetails(raw = {}) {
+function mapDetails(
+    raw = {},
+) {
     const normalized =
         Object.fromEntries(
-            Object.entries(raw)
-                .map(
-                    ([key, value]) => [
-                        normalizeKey(key),
-                        clean(value),
-                    ],
-                ),
+            Object.entries(
+                raw,
+            ).map(
+                ([
+                    key,
+                    value,
+                ]) => [
+                    normalizeKey(
+                        key,
+                    ),
+                    clean(
+                        value,
+                    ),
+                ],
+            ),
         );
 
-    const pick = (...candidates) => {
-        for (
-            const candidate
-            of candidates
-        ) {
-            const target =
-                normalizeKey(candidate);
-
-            if (normalized[target]) {
-                return normalized[target];
-            }
-
-            const fuzzy =
-                Object.entries(normalized)
-                    .find(
-                        ([key]) =>
-                            key.includes(target)
-                            || target.includes(key),
+    const pick =
+        (...candidates) => {
+            for (
+                const candidate
+                of candidates
+            ) {
+                const target =
+                    normalizeKey(
+                        candidate,
                     );
 
-            if (fuzzy?.[1]) {
-                return fuzzy[1];
-            }
-        }
+                if (
+                    normalized[
+                        target
+                    ]
+                ) {
+                    return normalized[
+                        target
+                    ];
+                }
 
-        return '';
-    };
+                const fuzzy =
+                    Object.entries(
+                        normalized,
+                    ).find(
+                        ([key]) =>
+                            key.includes(
+                                target,
+                            )
+                            || target.includes(
+                                key,
+                            ),
+                    );
+
+                if (
+                    fuzzy?.[1]
+                ) {
+                    return fuzzy[1];
+                }
+            }
+
+            return '';
+        };
 
     return {
         registrationNumber:
@@ -236,7 +325,9 @@ function mapDetails(raw = {}) {
             ),
 
         productName:
-            pick('nama produk'),
+            pick(
+                'nama produk',
+            ),
 
         brand:
             pick(
@@ -245,19 +336,29 @@ function mapDetails(raw = {}) {
             ),
 
         packaging:
-            pick('kemasan'),
+            pick(
+                'kemasan',
+            ),
 
         dosageForm:
-            pick('bentuk sediaan'),
+            pick(
+                'bentuk sediaan',
+            ),
 
         composition:
-            pick('komposisi'),
+            pick(
+                'komposisi',
+            ),
 
         applicationDate:
-            pick('tanggal permohonan'),
+            pick(
+                'tanggal permohonan',
+            ),
 
         issuedDate:
-            pick('tanggal terbit'),
+            pick(
+                'tanggal terbit',
+            ),
 
         expiryDate:
             pick(
@@ -272,41 +373,50 @@ function mapDetails(raw = {}) {
             ),
 
         cosmeticsManufacturer:
-            pick('industri kosmetika'),
+            pick(
+                'industri kosmetika',
+            ),
 
         kits:
-            pick('kits'),
+            pick(
+                'kits',
+            ),
 
         issuedBy:
-            pick('diterbitkan oleh'),
+            pick(
+                'diterbitkan oleh',
+            ),
 
         status:
-            pick('status'),
+            pick(
+                'status',
+            ),
     };
 }
 
 function buildJobs(input) {
     const jobs = [];
 
-    const add = (
-        kind,
-        values = [],
-    ) => {
-        for (
-            const raw
-            of values || []
-        ) {
-            const value =
-                clean(raw);
+    const add =
+        (
+            kind,
+            values = [],
+        ) => {
+            for (
+                const raw
+                of values || []
+            ) {
+                const value =
+                    clean(raw);
 
-            if (value) {
-                jobs.push({
-                    kind,
-                    value,
-                });
+                if (value) {
+                    jobs.push({
+                        kind,
+                        value,
+                    });
+                }
             }
-        }
-    };
+        };
 
     add(
         'brand',
@@ -333,7 +443,9 @@ function buildJobs(input) {
         input.compositions,
     );
 
-    if (!jobs.length) {
+    if (
+        !jobs.length
+    ) {
         throw new Error(
             'At least one monitoring criterion is required: brand, registrant, product name, registration number, or composition keyword.',
         );
@@ -342,7 +454,9 @@ function buildJobs(input) {
     return jobs;
 }
 
-function buildWatchSignature(jobs) {
+function buildWatchSignature(
+    jobs,
+) {
     const normalized =
         jobs
             .map(
@@ -353,11 +467,15 @@ function buildWatchSignature(jobs) {
                     value:
                         clean(
                             job.value,
-                        ).toLowerCase(),
+                        )
+                            .toLowerCase(),
                 }),
             )
             .sort(
-                (a, b) =>
+                (
+                    a,
+                    b,
+                ) =>
                     `${a.kind}:${a.value}`
                         .localeCompare(
                             `${b.kind}:${b.value}`,
@@ -365,16 +483,22 @@ function buildWatchSignature(jobs) {
             );
 
     return crypto
-        .createHash('sha256')
+        .createHash(
+            'sha256',
+        )
         .update(
             JSON.stringify(
                 normalized,
             ),
         )
-        .digest('hex');
+        .digest(
+            'hex',
+        );
 }
 
-function inputPlaceholderFor(kind) {
+function inputPlaceholderFor(
+    kind,
+) {
     return {
         registrationNumber:
             'Masukkan Nomor Registrasi',
@@ -393,7 +517,119 @@ function inputPlaceholderFor(kind) {
     }[kind];
 }
 
-async function visibleLocator(locator) {
+function issuedAgeDays(
+    issuedDate,
+    referenceIso,
+) {
+    if (
+        !/^\d{4}-\d{2}-\d{2}$/
+            .test(
+                clean(
+                    issuedDate,
+                ),
+            )
+    ) {
+        return null;
+    }
+
+    const issuedMs =
+        Date.parse(
+            `${clean(
+                issuedDate,
+            )}T00:00:00Z`,
+        );
+
+    const referenceMs =
+        Date.parse(
+            referenceIso,
+        );
+
+    if (
+        !Number.isFinite(
+            issuedMs,
+        )
+        || !Number.isFinite(
+            referenceMs,
+        )
+    ) {
+        return null;
+    }
+
+    return Math.floor(
+        (
+            referenceMs
+            - issuedMs
+        )
+        / DAY_MS,
+    );
+}
+
+function isRecentIssuedDate(
+    issuedDate,
+    referenceIso,
+    windowDays,
+) {
+    const ageDays =
+        issuedAgeDays(
+            issuedDate,
+            referenceIso,
+        );
+
+    return (
+        ageDays !== null
+        && ageDays >= -1
+        && ageDays
+            <= windowDays
+    );
+}
+
+function previousObservationCount(
+    previousEntry,
+) {
+    if (
+        !previousEntry
+    ) {
+        return 0;
+    }
+
+    const value =
+        Number(
+            previousEntry
+                .observationCount,
+        );
+
+    return (
+        Number.isFinite(
+            value,
+        )
+        && value >= 0
+    )
+        ? value
+        : 1;
+}
+
+function previousConsecutiveMisses(
+    previousEntry,
+) {
+    const value =
+        Number(
+            previousEntry
+                ?.consecutiveMisses,
+        );
+
+    return (
+        Number.isFinite(
+            value,
+        )
+        && value >= 0
+    )
+        ? value
+        : 0;
+}
+
+async function visibleLocator(
+    locator,
+) {
     const count =
         await locator.count();
 
@@ -419,10 +655,14 @@ async function visibleLocator(locator) {
     return null;
 }
 
-async function getProductTable(page) {
+async function getProductTable(
+    page,
+) {
     const tables =
         page
-            .locator('table')
+            .locator(
+                'table',
+            )
             .filter({
                 hasText:
                     /Nomor Registrasi/i,
@@ -456,7 +696,9 @@ async function getProductTable(page) {
             continue;
         }
 
-        if (!fallback) {
+        if (
+            !fallback
+        ) {
             fallback =
                 table;
         }
@@ -482,7 +724,9 @@ async function getProductTable(page) {
     );
 }
 
-async function waitForTable(page) {
+async function waitForTable(
+    page,
+) {
     await page.waitForSelector(
         'table',
         {
@@ -517,9 +761,13 @@ async function waitForTable(page) {
 
                     if (
                         !/Nomor Registrasi/i
-                            .test(headers)
+                            .test(
+                                headers,
+                            )
                         || !/Nama Produk/i
-                            .test(headers)
+                            .test(
+                                headers,
+                            )
                     ) {
                         return false;
                     }
@@ -553,7 +801,9 @@ async function waitForTable(page) {
 
                     return (
                         /tidak ada data|no data|data kosong/i
-                            .test(body)
+                            .test(
+                                body,
+                            )
                     );
                 },
             ),
@@ -671,9 +921,13 @@ async function applyFilter(
 
                     return (
                         /Nomor Registrasi/i
-                            .test(headers)
+                            .test(
+                                headers,
+                            )
                         && /Nama Produk/i
-                            .test(headers)
+                            .test(
+                                headers,
+                            )
                         && table
                             .querySelectorAll(
                                 'tbody tr',
@@ -695,7 +949,9 @@ async function applyFilter(
     );
 }
 
-async function extractDetailPairs(dialog) {
+async function extractDetailPairs(
+    dialog,
+) {
     return dialog.evaluate(
         (root) => {
             const result = {};
@@ -765,7 +1021,7 @@ async function extractDetailPairs(dialog) {
                     key,
                     value,
                 ) => {
-                    key =
+                    const normalizedKey =
                         cleanText(
                             key,
                         )
@@ -774,19 +1030,24 @@ async function extractDetailPairs(dialog) {
                                 '',
                             );
 
-                    value =
+                    const normalizedValue =
                         cleanText(
                             value,
                         );
 
                     if (
-                        key
-                        && value
-                        && key !== value
-                        && !result[key]
+                        normalizedKey
+                        && normalizedValue
+                        && normalizedKey
+                            !== normalizedValue
+                        && !result[
+                            normalizedKey
+                        ]
                     ) {
-                        result[key] =
-                            value;
+                        result[
+                            normalizedKey
+                        ] =
+                            normalizedValue;
                     }
                 };
 
@@ -846,9 +1107,13 @@ async function extractDetailPairs(dialog) {
                     .filter(
                         (line) =>
                             !/^Detail Produk$/i
-                                .test(line)
+                                .test(
+                                    line,
+                                )
                             && !/^Close$/i
-                                .test(line)
+                                .test(
+                                    line,
+                                )
                             && line !== '×',
                     );
 
@@ -896,8 +1161,7 @@ async function extractDetailPairs(dialog) {
                     continue;
                 }
 
-                const values =
-                    [];
+                const values = [];
 
                 for (
                     let j = i + 1;
@@ -955,7 +1219,9 @@ async function extractDetailPairs(dialog) {
     );
 }
 
-async function getVisibleDialog(page) {
+async function getVisibleDialog(
+    page,
+) {
     const candidates =
         page.locator(
             '.modal:visible, [role="dialog"]:visible',
@@ -983,7 +1249,9 @@ async function getVisibleDialog(page) {
 
         if (
             /detail produk/i
-                .test(text)
+                .test(
+                    text,
+                )
             || text.length > 20
         ) {
             return dialog;
@@ -1016,7 +1284,9 @@ async function enrichFromRow(
             },
         );
 
-        if (count > 0) {
+        if (
+            count > 0
+        ) {
             await clickable
                 .first()
                 .click();
@@ -1053,10 +1323,11 @@ async function enrichFromRow(
             'BPOM product detail dialog detected.',
             {
                 textPreview:
-                    dialogText.slice(
-                        0,
-                        2000,
-                    ),
+                    dialogText
+                        .slice(
+                            0,
+                            2000,
+                        ),
             },
         );
 
@@ -1122,7 +1393,9 @@ async function enrichFromRow(
             {
                 error:
                     error?.message
-                    || String(error),
+                    || String(
+                        error,
+                    ),
             },
         );
 
@@ -1148,6 +1421,7 @@ async function extractCurrentPage(
         maxRemaining,
         requestDelayMs,
         detailStats,
+        detailDecisionRegistrationNumbers,
         detailFetchedRegistrationNumbers,
     },
     crawlerLog,
@@ -1162,8 +1436,7 @@ async function extractCurrentPage(
             'tbody tr',
         );
 
-    const results =
-        [];
+    const results = [];
 
     const rowCount =
         await rows.count();
@@ -1180,7 +1453,9 @@ async function extractCurrentPage(
 
         const cells =
             await row
-                .locator('td')
+                .locator(
+                    'td',
+                )
                 .allInnerTexts();
 
         if (
@@ -1193,8 +1468,12 @@ async function extractCurrentPage(
             /tidak ada data|no data|data tidak/i
                 .test(
                     cells
-                        .map(clean)
-                        .join(' '),
+                        .map(
+                            clean,
+                        )
+                        .join(
+                            ' ',
+                        ),
                 )
         ) {
             continue;
@@ -1254,6 +1533,13 @@ async function extractCurrentPage(
                     .registrantLocation,
         };
 
+        if (
+            !list
+                .registrationNumber
+        ) {
+            continue;
+        }
+
         const currentBasicHash =
             basicHash(
                 list,
@@ -1261,15 +1547,18 @@ async function extractCurrentPage(
 
         const previousEntry =
             previousRecords[
-                list.registrationNumber
+                list
+                    .registrationNumber
             ];
 
         const previousRecord =
-            previousEntry?.record
+            previousEntry
+                ?.record
             ?? null;
 
         const previousBasicHash =
-            previousEntry?.basicHash
+            previousEntry
+                ?.basicHash
             || (
                 previousRecord
                     ? basicHash(
@@ -1280,53 +1569,72 @@ async function extractCurrentPage(
 
         const listingChanged =
             previousRecord
-                ? (
-                    previousBasicHash
+                ? previousBasicHash
                     !== currentBasicHash
-                )
                 : true;
-
-        const detailAlreadyFetched =
-            detailFetchedRegistrationNumbers
-                .has(
-                    list.registrationNumber,
-                );
 
         let shouldFetchDetail =
             false;
 
         if (
-            detailStrategy === 'always'
-            && !detailAlreadyFetched
+            !detailDecisionRegistrationNumbers
+                .has(
+                    list
+                        .registrationNumber,
+                )
         ) {
-            shouldFetchDetail =
-                true;
-        } else if (
-            detailStrategy === 'changesOnly'
-            && detectChanges
-            && !detailAlreadyFetched
-            && (
-                !previousRecord
-                || listingChanged
-            )
-        ) {
-            shouldFetchDetail =
-                true;
-        }
+            if (
+                detailStrategy
+                    === 'always'
+            ) {
+                shouldFetchDetail =
+                    true;
+            } else if (
+                detailStrategy
+                    === 'changesOnly'
+                && detectChanges
+                && (
+                    !previousRecord
+                    || listingChanged
+                )
+            ) {
+                shouldFetchDetail =
+                    true;
+            }
 
-        if (shouldFetchDetail) {
-            detailStats.requested++;
-
-            detailFetchedRegistrationNumbers
+            detailDecisionRegistrationNumbers
                 .add(
-                    list.registrationNumber,
+                    list
+                        .registrationNumber,
                 );
-        } else {
-            detailStats.skipped++;
+
+            if (
+                shouldFetchDetail
+            ) {
+                detailStats
+                    .requested++;
+
+                detailFetchedRegistrationNumbers
+                    .add(
+                        list
+                            .registrationNumber,
+                    );
+            } else {
+                detailStats
+                    .skipped++;
+            }
         }
+
+        const shouldUseThisRowForDetail =
+            shouldFetchDetail
+            && detailFetchedRegistrationNumbers
+                .has(
+                    list
+                        .registrationNumber,
+                );
 
         const detail =
-            shouldFetchDetail
+            shouldUseThisRowForDetail
                 ? await enrichFromRow(
                     page,
                     row,
@@ -1337,7 +1645,9 @@ async function extractCurrentPage(
 
         const carriedDetail = {};
 
-        if (previousRecord) {
+        if (
+            previousRecord
+        ) {
             const carryFields = [
                 'composition',
                 'cosmeticsManufacturer',
@@ -1354,11 +1664,17 @@ async function extractCurrentPage(
                 of carryFields
             ) {
                 if (
-                    previousRecord[field]
+                    previousRecord[
+                        field
+                    ]
                     !== undefined
                 ) {
-                    carriedDetail[field] =
-                        previousRecord[field];
+                    carriedDetail[
+                        field
+                    ] =
+                        previousRecord[
+                            field
+                        ];
                 }
             }
         }
@@ -1400,20 +1716,26 @@ async function extractCurrentPage(
 
             packaging:
                 clean(
-                    detail.packaging
-                    || list.packaging,
+                    detail
+                        .packaging
+                    || list
+                        .packaging,
                 ),
 
             composition:
                 clean(
-                    detail.composition
-                    || carriedDetail.composition,
+                    detail
+                        .composition
+                    || carriedDetail
+                        .composition,
                 ),
 
             registrant:
                 clean(
-                    detail.registrant
-                    || list.registrant,
+                    detail
+                        .registrant
+                    || list
+                        .registrant,
                 ),
 
             registrantLocation:
@@ -1424,44 +1746,56 @@ async function extractCurrentPage(
 
             cosmeticsManufacturer:
                 clean(
-                    detail.cosmeticsManufacturer
-                    || carriedDetail.cosmeticsManufacturer,
+                    detail
+                        .cosmeticsManufacturer
+                    || carriedDetail
+                        .cosmeticsManufacturer,
                 ),
 
             kits:
                 clean(
                     detail.kits
-                    || carriedDetail.kits,
+                    || carriedDetail
+                        .kits,
                 ),
 
             issuedBy:
                 clean(
-                    detail.issuedBy
-                    || carriedDetail.issuedBy,
+                    detail
+                        .issuedBy
+                    || carriedDetail
+                        .issuedBy,
                 ),
 
             dosageForm:
                 clean(
-                    detail.dosageForm
-                    || carriedDetail.dosageForm,
+                    detail
+                        .dosageForm
+                    || carriedDetail
+                        .dosageForm,
                 ),
 
             applicationDate:
                 clean(
-                    detail.applicationDate
-                    || carriedDetail.applicationDate,
+                    detail
+                        .applicationDate
+                    || carriedDetail
+                        .applicationDate,
                 ),
 
             expiryDate:
                 clean(
-                    detail.expiryDate
-                    || carriedDetail.expiryDate,
+                    detail
+                        .expiryDate
+                    || carriedDetail
+                        .expiryDate,
                 ),
 
             status:
                 clean(
                     detail.status
-                    || carriedDetail.status,
+                    || carriedDetail
+                        .status,
                 ),
 
             category:
@@ -1488,14 +1822,9 @@ async function extractCurrentPage(
                 currentBasicHash,
         };
 
-        if (
-            record
-                .registrationNumber
-        ) {
-            results.push(
-                record,
-            );
-        }
+        results.push(
+            record,
+        );
     }
 
     return results;
@@ -1572,17 +1901,21 @@ async function clickNext(
 
     return page
         .waitForFunction(
-            (previous) =>
+            (
+                previous,
+            ) =>
                 [
                     ...document
                         .querySelectorAll(
                             'table',
                         ),
                 ].some(
-                    (table) => {
+                    (
+                        tableElement,
+                    ) => {
                         const headers =
                             (
-                                table
+                                tableElement
                                     .querySelector(
                                         'thead',
                                     )
@@ -1597,16 +1930,20 @@ async function clickNext(
 
                         if (
                             !/Nomor Registrasi/i
-                                .test(headers)
+                                .test(
+                                    headers,
+                                )
                             || !/Nama Produk/i
-                                .test(headers)
+                                .test(
+                                    headers,
+                                )
                         ) {
                             return false;
                         }
 
                         const current =
                             (
-                                table
+                                tableElement
                                     .querySelector(
                                         'tbody tr',
                                     )
@@ -1620,7 +1957,9 @@ async function clickNext(
                                 .trim();
 
                         return (
-                            current
+                            Boolean(
+                                current,
+                            )
                             && current
                                 !== previous
                         );
@@ -1662,10 +2001,12 @@ function diffFields(
     ].filter(
         (key) =>
             clean(
-                previous?.[key],
+                previous
+                    ?.[key],
             )
             !== clean(
-                current?.[key],
+                current
+                    ?.[key],
             ),
     );
 }
@@ -1679,58 +2020,22 @@ function shouldEmit(
     ) {
         return (
             eventType
-            === 'NEW'
+                === 'NEW'
         );
     }
 
     if (
         mode === 'changes'
     ) {
-        return [
-            'NEW',
-            'CHANGED',
-        ].includes(
-            eventType,
+        return (
+            eventType
+                === 'NEW'
+            || eventType
+                === 'CHANGED'
         );
     }
 
     return true;
-}
-
-function previousObservationCount(previousEntry) {
-    if (!previousEntry) {
-        return 0;
-    }
-
-    const value =
-        Number(
-            previousEntry
-                .observationCount,
-        );
-
-    if (
-        Number.isFinite(value)
-        && value >= 0
-    ) {
-        return value;
-    }
-
-    return 1;
-}
-
-function previousConsecutiveMisses(previousEntry) {
-    const value =
-        Number(
-            previousEntry
-                ?.consecutiveMisses,
-        );
-
-    return (
-        Number.isFinite(value)
-        && value >= 0
-    )
-        ? value
-        : 0;
 }
 
 await Actor.main(
@@ -1766,9 +2071,53 @@ await Actor.main(
                 ?? 100,
             );
 
+        const baselineWarmupRuns =
+            Number(
+                input
+                    .baselineWarmupRuns
+                ?? 3,
+            );
+
+        const newProductWindowDays =
+            Number(
+                input
+                    .newProductWindowDays
+                ?? 30,
+            );
+
+        const requestDelayMs =
+            Number(
+                input
+                    .requestDelayMs
+                ?? 800,
+            );
+
+        if (
+            !Number.isInteger(
+                baselineWarmupRuns,
+            )
+            || baselineWarmupRuns < 1
+        ) {
+            throw new Error(
+                'baselineWarmupRuns must be an integer >= 1.',
+            );
+        }
+
+        if (
+            !Number.isInteger(
+                newProductWindowDays,
+            )
+            || newProductWindowDays < 1
+        ) {
+            throw new Error(
+                'newProductWindowDays must be an integer >= 1.',
+            );
+        }
+
         const detailStrategy =
             clean(
-                input.detailStrategy
+                input
+                    .detailStrategy
                 || 'changesOnly',
             );
 
@@ -1799,13 +2148,6 @@ await Actor.main(
             input.emit
             ?? 'changes';
 
-        const requestDelayMs =
-            Number(
-                input
-                    .requestDelayMs
-                ?? 800,
-            );
-
         const allowPartialSnapshotUpdate =
             Boolean(
                 input
@@ -1828,48 +2170,6 @@ await Actor.main(
             );
         }
 
-        log.info(
-            'Actor input loaded.',
-            {
-                version:
-                    '0.2.2',
-
-                jobs:
-                    jobs.length,
-
-                detailStrategy,
-
-                detectChanges,
-
-                emit,
-
-                maxItemsPerQuery,
-
-                maxPagesPerQuery,
-
-                allowPartialSnapshotUpdate,
-
-                debug,
-            },
-        );
-
-        const collected =
-            new Map();
-
-        const failedJobs =
-            [];
-
-        const querySummaries =
-            new Map();
-
-        const detailStats = {
-            requested: 0,
-            skipped: 0,
-        };
-
-        const detailFetchedRegistrationNumbers =
-            new Set();
-
         const stateStoreName =
             clean(
                 input
@@ -1879,8 +2179,7 @@ await Actor.main(
 
         const stateKey =
             clean(
-                input
-                    .stateKey
+                input.stateKey
                 || 'default',
             )
                 .replace(
@@ -1902,18 +2201,71 @@ await Actor.main(
                     )
                 : null;
 
-        const previousRecordsForDetail =
-            (
+        const watchlistMatchesPreviousState =
+            Boolean(
                 detectChanges
                 && rawPreviousState
                     ?.watchSignature
-                    === watchSignature
-            )
-                ? (
-                    rawPreviousState.records
+                && rawPreviousState
+                    .watchSignature
+                    === watchSignature,
+            );
+
+        const previousRecordsForDetail =
+            watchlistMatchesPreviousState
+                ? rawPreviousState
+                    .records
                     ?? {}
-                )
                 : {};
+
+        log.info(
+            'Actor input loaded.',
+            {
+                version:
+                    ACTOR_VERSION,
+
+                jobs:
+                    jobs.length,
+
+                detailStrategy,
+
+                detectChanges,
+
+                emit,
+
+                maxItemsPerQuery,
+
+                maxPagesPerQuery,
+
+                baselineWarmupRuns,
+
+                newProductWindowDays,
+
+                allowPartialSnapshotUpdate,
+
+                debug,
+            },
+        );
+
+        const collected =
+            new Map();
+
+        const failedJobs =
+            [];
+
+        const querySummaries =
+            new Map();
+
+        const detailStats = {
+            requested: 0,
+            skipped: 0,
+        };
+
+        const detailDecisionRegistrationNumbers =
+            new Set();
+
+        const detailFetchedRegistrationNumbers =
+            new Set();
 
         const crawler =
             new PlaywrightCrawler({
@@ -2039,12 +2391,6 @@ await Actor.main(
                     let queryCount =
                         0;
 
-                    const seenRegistrationNumbers =
-                        new Set();
-
-                    const duplicateRegistrationNumbers =
-                        new Set();
-
                     let duplicateRows =
                         0;
 
@@ -2053,6 +2399,12 @@ await Actor.main(
 
                     let coverageComplete =
                         false;
+
+                    const seenRegistrationNumbers =
+                        new Set();
+
+                    const duplicateRegistrationNumbers =
+                        new Set();
 
                     while (
                         pageNumber
@@ -2088,6 +2440,8 @@ await Actor.main(
 
                                     detailStats,
 
+                                    detailDecisionRegistrationNumbers,
+
                                     detailFetchedRegistrationNumbers,
                                 },
                                 crawlerLog,
@@ -2105,15 +2459,21 @@ await Actor.main(
 
                             if (
                                 seenRegistrationNumbers
-                                    .has(key)
+                                    .has(
+                                        key,
+                                    )
                             ) {
                                 duplicateRows++;
 
                                 duplicateRegistrationNumbers
-                                    .add(key);
+                                    .add(
+                                        key,
+                                    );
                             } else {
                                 seenRegistrationNumbers
-                                    .add(key);
+                                    .add(
+                                        key,
+                                    );
                             }
 
                             const existing =
@@ -2122,7 +2482,9 @@ await Actor.main(
                                         key,
                                     );
 
-                            if (!existing) {
+                            if (
+                                !existing
+                            ) {
                                 collected
                                     .set(
                                         key,
@@ -2146,7 +2508,9 @@ await Actor.main(
 
                                 if (
                                     !matches.some(
-                                        (match) =>
+                                        (
+                                            match,
+                                        ) =>
                                             match.type
                                                 === item
                                                     .matchedBy
@@ -2208,7 +2572,9 @@ await Actor.main(
                                 requestDelayMs,
                             );
 
-                        if (!moved) {
+                        if (
+                            !moved
+                        ) {
                             coverageComplete =
                                 true;
 
@@ -2297,45 +2663,46 @@ await Actor.main(
                             ),
                     });
 
-                    querySummaries.set(
-                        request
-                            .uniqueKey,
-                        {
-                            queryId:
-                                request
-                                    .uniqueKey,
+                    querySummaries
+                        .set(
+                            request
+                                .uniqueKey,
+                            {
+                                queryId:
+                                    request
+                                        .uniqueKey,
 
-                            kind:
-                                job.kind,
+                                kind:
+                                    job.kind,
 
-                            value:
-                                job.value,
+                                value:
+                                    job.value,
 
-                            rawRowsCollected:
-                                0,
+                                rawRowsCollected:
+                                    0,
 
-                            uniqueProducts:
-                                0,
+                                uniqueProducts:
+                                    0,
 
-                            duplicateRows:
-                                0,
+                                duplicateRows:
+                                    0,
 
-                            duplicateRegistrationNumberCount:
-                                0,
+                                duplicateRegistrationNumberCount:
+                                    0,
 
-                            duplicateRegistrationNumbers:
-                                [],
+                                duplicateRegistrationNumbers:
+                                    [],
 
-                            pagesVisited:
-                                0,
+                                pagesVisited:
+                                    0,
 
-                            coverageComplete:
-                                false,
+                                coverageComplete:
+                                    false,
 
-                            stopReason:
-                                'request_failed',
-                        },
-                    );
+                                stopReason:
+                                    'request_failed',
+                            },
+                        );
 
                     crawlerLog.error(
                         `Query failed: ${job.kind}=${job.value}`,
@@ -2397,7 +2764,7 @@ await Actor.main(
 
                 watchSignature,
 
-                runCount:
+                successfulRuns:
                     0,
 
                 records:
@@ -2424,7 +2791,7 @@ await Actor.main(
 
                 watchSignature,
 
-                runCount:
+                successfulRuns:
                     0,
 
                 records:
@@ -2432,7 +2799,7 @@ await Actor.main(
             };
 
             log.warning(
-                'Watchlist changed for this stateKey; starting a fresh baseline.',
+                'Watchlist changed for this stateKey; starting a fresh trusted baseline.',
                 {
                     stateKey,
                 },
@@ -2444,8 +2811,26 @@ await Actor.main(
                 .records
             ?? {};
 
-        const observedRecords =
-            {};
+        const successfulRunsBefore =
+            Number(
+                previousState
+                    .successfulRuns
+                ?? previousState
+                    .runCount
+                ?? 0,
+            );
+
+        const baselineReadyBeforeRun =
+            successfulRunsBefore
+            >= baselineWarmupRuns;
+
+        const observedRecords = {};
+
+        let baselineCount =
+            0;
+
+        let discoveredCount =
+            0;
 
         let newCount =
             0;
@@ -2465,12 +2850,16 @@ await Actor.main(
         let reappearedCount =
             0;
 
+        let firstSeenCount =
+            0;
+
         for (
             const internalRecord
             of collected.values()
         ) {
             const currentBasicHash =
-                internalRecord.__basicHash
+                internalRecord
+                    .__basicHash
                 || basicHash(
                     internalRecord,
                 );
@@ -2479,7 +2868,8 @@ await Actor.main(
                 ...internalRecord,
             };
 
-            delete record.__basicHash;
+            delete record
+                .__basicHash;
 
             const id =
                 record
@@ -2498,6 +2888,13 @@ await Actor.main(
                     previousEntry,
                 );
 
+            const ageDays =
+                issuedAgeDays(
+                    record
+                        .issuedDate,
+                    runStartedAt,
+                );
+
             if (
                 previousEntry
                 && priorMisses > 0
@@ -2507,30 +2904,93 @@ await Actor.main(
 
             let eventType;
 
+            let classificationReason;
+
             let changedFields =
                 [];
 
             let previous;
 
-            if (!detectChanges) {
+            if (
+                !detectChanges
+            ) {
                 eventType =
                     'SNAPSHOT';
+
+                classificationReason =
+                    'CHANGE_DETECTION_DISABLED';
 
                 snapshotCount++;
             } else if (
                 !previousEntry
             ) {
-                eventType =
-                    'NEW';
+                firstSeenCount++;
 
-                newCount++;
+                if (
+                    !baselineReadyBeforeRun
+                ) {
+                    eventType =
+                        'BASELINE';
+
+                    classificationReason =
+                        'TRUSTED_BASELINE_WARMUP';
+
+                    baselineCount++;
+                } else if (
+                    isRecentIssuedDate(
+                        record
+                            .issuedDate,
+                        runStartedAt,
+                        newProductWindowDays,
+                    )
+                ) {
+                    eventType =
+                        'NEW';
+
+                    classificationReason =
+                        'FIRST_SEEN_WITH_RECENT_ISSUED_DATE';
+
+                    newCount++;
+                } else {
+                    eventType =
+                        'DISCOVERED';
+
+                    classificationReason =
+                        ageDays
+                            === null
+                            ? 'FIRST_SEEN_WITH_UNKNOWN_ISSUED_DATE'
+                            : 'FIRST_SEEN_WITH_OLD_ISSUED_DATE';
+
+                    discoveredCount++;
+                }
+            } else if (
+                !baselineReadyBeforeRun
+                && previousEntry
+                    .hash
+                    !== hash
+            ) {
+                /*
+                 * Selama warm-up, perubahan record tidak
+                 * dikirim sebagai operational CHANGED.
+                 * Kita serap state terbarunya ke baseline.
+                 */
+                eventType =
+                    'BASELINE';
+
+                classificationReason =
+                    'BASELINE_RECORD_UPDATED_DURING_WARMUP';
+
+                baselineCount++;
             } else if (
                 previousEntry
                     .hash
-                !== hash
+                    !== hash
             ) {
                 eventType =
                     'CHANGED';
+
+                classificationReason =
+                    'KNOWN_RECORD_CHANGED';
 
                 previous =
                     previousEntry
@@ -2548,11 +3008,21 @@ await Actor.main(
                 eventType =
                     'UNCHANGED';
 
+                classificationReason =
+                    baselineReadyBeforeRun
+                        ? 'KNOWN_RECORD_UNCHANGED'
+                        : 'BASELINE_RECORD_REOBSERVED';
+
                 unchangedCount++;
             }
 
             const output = {
                 eventType,
+
+                classificationReason,
+
+                issuedAgeDays:
+                    ageDays,
 
                 ...record,
 
@@ -2586,11 +3056,15 @@ await Actor.main(
 
             const fallbackFirstSeenAt =
                 previousEntry
-                    ?.record
-                    ?.scrapedAt
-                || previousState
-                    .updatedAt
-                || runStartedAt;
+                    ? (
+                        previousEntry
+                            .record
+                            ?.scrapedAt
+                        || previousState
+                            .updatedAt
+                        || runStartedAt
+                    )
+                    : runStartedAt;
 
             observedRecords[id] = {
                 hash,
@@ -2638,7 +3112,9 @@ await Actor.main(
                     .filter(
                         (id) =>
                             !observedIds
-                                .has(id),
+                                .has(
+                                    id,
+                                ),
                     )
                 : [];
 
@@ -2668,7 +3144,9 @@ await Actor.main(
             ) {
                 if (
                     observedIds
-                        .has(id)
+                        .has(
+                            id,
+                        )
                 ) {
                     continue;
                 }
@@ -2676,7 +3154,9 @@ await Actor.main(
                 const previousEntry =
                     previousRecords[id];
 
-                if (!previousEntry) {
+                if (
+                    !previousEntry
+                ) {
                     continue;
                 }
 
@@ -2718,14 +3198,20 @@ await Actor.main(
             }
         }
 
-        const nextRunCount =
-            Number(
-                previousState
-                    .runCount
-                ?? 0,
-            ) + 1;
+        const successfulRunsAfter =
+            snapshotCanUpdate
+            && overallCoverageComplete
+                ? successfulRunsBefore
+                    + 1
+                : successfulRunsBefore;
 
-        if (snapshotCanUpdate) {
+        const baselineReadyAfterRun =
+            successfulRunsAfter
+            >= baselineWarmupRuns;
+
+        if (
+            snapshotCanUpdate
+        ) {
             await stateStore
                 .setValue(
                     `SNAPSHOT_${stateKey}`,
@@ -2733,10 +3219,18 @@ await Actor.main(
                         version:
                             SNAPSHOT_VERSION,
 
+                        actorVersion:
+                            ACTOR_VERSION,
+
                         watchSignature,
 
-                        runCount:
-                            nextRunCount,
+                        successfulRuns:
+                            successfulRunsAfter,
+
+                        baselineWarmupRuns,
+
+                        baselineReady:
+                            baselineReadyAfterRun,
 
                         updatedAt:
                             isoNow(),
@@ -2770,7 +3264,10 @@ await Actor.main(
         const totalRawRowsCollected =
             querySummaryList
                 .reduce(
-                    (total, query) =>
+                    (
+                        total,
+                        query,
+                    ) =>
                         total
                         + (
                             query
@@ -2783,7 +3280,10 @@ await Actor.main(
         const totalDuplicateRows =
             querySummaryList
                 .reduce(
-                    (total, query) =>
+                    (
+                        total,
+                        query,
+                    ) =>
                         total
                         + (
                             query
@@ -2842,9 +3342,51 @@ await Actor.main(
                     previousRecords,
                 ).length;
 
+        let baselineStatus =
+            'DISABLED';
+
+        if (
+            detectChanges
+        ) {
+            if (
+                baselineReadyBeforeRun
+            ) {
+                baselineStatus =
+                    'READY';
+            } else if (
+                baselineReadyAfterRun
+            ) {
+                baselineStatus =
+                    'READY_AFTER_THIS_RUN';
+            } else {
+                baselineStatus =
+                    'WARMING_UP';
+            }
+        }
+
         const summary = {
             version:
-                '0.2.2',
+                ACTOR_VERSION,
+
+            baseline: {
+                status:
+                    baselineStatus,
+
+                requiredSuccessfulRuns:
+                    baselineWarmupRuns,
+
+                successfulRunsBefore,
+
+                successfulRunsAfter,
+
+                readyBeforeRun:
+                    baselineReadyBeforeRun,
+
+                readyAfterRun:
+                    baselineReadyAfterRun,
+
+                newProductWindowDays,
+            },
 
             monitoringSummary: {
                 watchlistQueries:
@@ -2860,10 +3402,12 @@ await Actor.main(
                 detailStrategy,
 
                 detailFetches:
-                    detailStats.requested,
+                    detailStats
+                        .requested,
 
                 detailSkips:
-                    detailStats.skipped,
+                    detailStats
+                        .skipped,
 
                 rawRowsCollected:
                     totalRawRowsCollected,
@@ -2888,8 +3432,17 @@ await Actor.main(
                 snapshotProducts:
                     persistedSnapshotProducts,
 
+                firstSeenProducts:
+                    firstSeenCount,
+
+                baselineProducts:
+                    baselineCount,
+
                 newProducts:
                     newCount,
+
+                discoveredProducts:
+                    discoveredCount,
 
                 changedProducts:
                     changedCount,
@@ -2930,15 +3483,6 @@ await Actor.main(
 
             snapshotUpdated:
                 snapshotCanUpdate,
-
-            stateRunCount:
-                snapshotCanUpdate
-                    ? nextRunCount
-                    : Number(
-                        previousState
-                            .runCount
-                        ?? 0,
-                    ),
 
             stateStoreName,
 
