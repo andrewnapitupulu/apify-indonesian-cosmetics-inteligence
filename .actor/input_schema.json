@@ -74,13 +74,23 @@
       "default": 100,
       "editor": "number"
     },
-    "includeDetails": {
-      "title": "Open product details",
-      "type": "boolean",
-      "description": "Open each BPOM product detail modal to collect manufacturer, composition, packaging, kits, and issuing unit. Recommended for monitoring.",
-      "default": true,
-      "editor": "checkbox"
-    },
+    "detailStrategy": {
+  "title": "Product detail strategy",
+  "type": "string",
+  "description": "Controls when the Actor opens BPOM product detail. changesOnly is recommended for production monitoring.",
+  "editor": "select",
+  "enum": [
+    "always",
+    "changesOnly",
+    "never"
+  ],
+  "enumTitles": [
+    "Always open product details",
+    "Only for new or changed products",
+    "Never open product details"
+  ],
+  "default": "changesOnly"
+},
     "detectChanges": {
       "title": "Detect changes across runs",
       "type": "boolean",
