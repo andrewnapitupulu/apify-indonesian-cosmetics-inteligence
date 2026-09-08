@@ -7,11 +7,9 @@
     "brands": {
       "title": "Brands to monitor",
       "type": "array",
-      "description": "Cosmetics brands to monitor in BPOM. Each brand is queried separately.",
+      "description": "Optional cosmetics brands to monitor in BPOM. Each brand is queried separately. Leave empty when monitoring by another criterion.",
       "editor": "stringList",
-      "default": [
-        "SOMETHINC"
-      ],
+      "default": [],
       "items": {
         "type": "string"
       }
