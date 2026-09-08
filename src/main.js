@@ -4,7 +4,7 @@ import { PlaywrightCrawler } from 'crawlee';
 
 const BASE_URL = 'https://cekbpom.pom.go.id/produk-kosmetika';
 const SNAPSHOT_VERSION = 7;
-const ACTOR_VERSION = '0.2.6';
+const ACTOR_VERSION = '0.2.6-r2';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const LISTING_FIELDS = [
@@ -224,6 +224,7 @@ function previousKnownDetailFields(previousEntry) {
 
 function previousDetailKnown(previousEntry) {
     if (!previousEntry) return false;
+
     if (typeof previousEntry.detailKnown === 'boolean') {
         return previousEntry.detailKnown;
     }
@@ -247,13 +248,6 @@ function resolvePreviousDetailFetchedAt(
 
     if (validIsoTimestamp(direct)) return direct;
 
-    /*
-     * v0.2.5 did not store a dedicated detail-fetch timestamp.
-     * For records that already have known detail fields, use the previous
-     * snapshot timestamp as a conservative migration anchor. This prevents
-     * the first v0.2.6 staleOnly run from re-fetching every known detail
-     * immediately after migration.
-     */
     if (
         previousDetailKnown(previousEntry)
         && validIsoTimestamp(legacyStateUpdatedAt)
@@ -330,8 +324,12 @@ function mapDetails(raw = {}) {
         cosmeticsManufacturer: sanitizeCosmeticsManufacturer(
             pick('industri kosmetika'),
         ),
-        primaryPackagingManufacturer: pick('industri pengemas primer'),
-        secondaryPackagingManufacturer: pick('industri pengemas sekunder'),
+        primaryPackagingManufacturer: pick(
+            'industri pengemas primer',
+        ),
+        secondaryPackagingManufacturer: pick(
+            'industri pengemas sekunder',
+        ),
         kits: pick('kits'),
         issuedBy: pick('diterbitkan oleh'),
         status: pick('status'),
@@ -370,7 +368,9 @@ function buildWatchSignature(jobs) {
             value: clean(job.value).toLowerCase(),
         }))
         .sort((a, b) =>
-            `${a.kind}:${a.value}`.localeCompare(`${b.kind}:${b.value}`),
+            `${a.kind}:${a.value}`.localeCompare(
+                `${b.kind}:${b.value}`,
+            ),
         );
 
     return crypto
@@ -414,15 +414,18 @@ function compareDateOnly(left, right) {
 
     if (!a || !b) return null;
     if (a === b) return 0;
+
     return a < b ? -1 : 1;
 }
 
 function earliestFirstSeenAt(records = {}) {
     const values = Object.values(records)
-        .map((entry) => clean(
-            entry?.firstSeenAt
-            || entry?.record?.scrapedAt,
-        ))
+        .map((entry) =>
+            clean(
+                entry?.firstSeenAt
+                || entry?.record?.scrapedAt,
+            ),
+        )
         .filter((value) => Number.isFinite(Date.parse(value)))
         .sort((a, b) => Date.parse(a) - Date.parse(b));
 
@@ -433,22 +436,34 @@ function previousObservationCount(previousEntry) {
     if (!previousEntry) return 0;
 
     const value = Number(previousEntry.observationCount);
-    return Number.isFinite(value) && value >= 0 ? value : 1;
+
+    return Number.isFinite(value) && value >= 0
+        ? value
+        : 1;
 }
 
 function previousConsecutiveMisses(previousEntry) {
     const value = Number(previousEntry?.consecutiveMisses);
-    return Number.isFinite(value) && value >= 0 ? value : 0;
+
+    return Number.isFinite(value) && value >= 0
+        ? value
+        : 0;
 }
 
 function diffFields(previous, current, fields) {
     return fields.filter(
-        (key) => clean(previous?.[key]) !== clean(current?.[key]),
+        (key) =>
+            clean(previous?.[key])
+            !== clean(current?.[key]),
     );
 }
 
 function diffListingFields(previous, current) {
-    return diffFields(previous, current, LISTING_CHANGE_FIELDS);
+    return diffFields(
+        previous,
+        current,
+        LISTING_CHANGE_FIELDS,
+    );
 }
 
 function diffKnownDetailFields(
@@ -461,7 +476,8 @@ function diffKnownDetailFields(
         (key) =>
             previousKnownFields.has(key)
             && currentKnownFields.has(key)
-            && clean(previous?.[key]) !== clean(current?.[key]),
+            && clean(previous?.[key])
+                !== clean(current?.[key]),
     );
 }
 
@@ -480,10 +496,17 @@ function calculateEnrichedFields(
 }
 
 function shouldEmit(mode, eventType) {
-    if (mode === 'new') return eventType === 'NEW';
-    if (mode === 'changes') {
-        return eventType === 'NEW' || eventType === 'CHANGED';
+    if (mode === 'new') {
+        return eventType === 'NEW';
     }
+
+    if (mode === 'changes') {
+        return (
+            eventType === 'NEW'
+            || eventType === 'CHANGED'
+        );
+    }
+
     return true;
 }
 
@@ -492,7 +515,14 @@ async function visibleLocator(locator) {
 
     for (let i = count - 1; i >= 0; i--) {
         const item = locator.nth(i);
-        if (await item.isVisible().catch(() => false)) return item;
+
+        if (
+            await item
+                .isVisible()
+                .catch(() => false)
+        ) {
+            return item;
+        }
     }
 
     return null;
@@ -501,118 +531,223 @@ async function visibleLocator(locator) {
 async function getProductTable(page) {
     const tables = page
         .locator('table')
-        .filter({ hasText: /Nomor Registrasi/i })
-        .filter({ hasText: /Nama Produk/i });
+        .filter({
+            hasText: /Nomor Registrasi/i,
+        })
+        .filter({
+            hasText: /Nama Produk/i,
+        });
 
     let fallback = null;
     const count = await tables.count();
 
     for (let i = 0; i < count; i++) {
         const table = tables.nth(i);
-        if (!await table.isVisible().catch(() => false)) continue;
-        if (!fallback) fallback = table;
-        if (await table.locator('tbody tr').count() > 0) return table;
+
+        if (
+            !await table
+                .isVisible()
+                .catch(() => false)
+        ) {
+            continue;
+        }
+
+        if (!fallback) {
+            fallback = table;
+        }
+
+        if (
+            await table
+                .locator('tbody tr')
+                .count() > 0
+        ) {
+            return table;
+        }
     }
 
-    if (fallback) return fallback;
-    throw new Error('BPOM product result table was not found.');
+    if (fallback) {
+        return fallback;
+    }
+
+    throw new Error(
+        'BPOM product result table was not found.',
+    );
 }
 
 async function waitForTable(page) {
-    await page.waitForSelector('table', { timeout: 30000 });
-
-    await page.waitForFunction(
-        () => [...document.querySelectorAll('table')].some((table) => {
-            const headers = (
-                table.querySelector('thead')?.textContent || ''
-            ).replace(/\s+/g, ' ').trim();
-
-            if (
-                !/Nomor Registrasi/i.test(headers)
-                || !/Nama Produk/i.test(headers)
-            ) {
-                return false;
-            }
-
-            const rows = table.querySelectorAll('tbody tr');
-            if (rows.length > 0) return true;
-
-            const body = (
-                table.querySelector('tbody')?.textContent || ''
-            ).replace(/\s+/g, ' ').trim();
-
-            return /tidak ada data|no data|data kosong/i.test(body);
-        }),
-        { timeout: 30000 },
-    ).catch(() => undefined);
-}
-
-async function applyFilter(page, job, delay, crawlerLog) {
-    const open = await visibleLocator(
-        page.getByRole('button', { name: /^Filter$/i }),
+    await page.waitForSelector(
+        'table',
+        {
+            timeout: 30000,
+        },
     );
 
-    if (!open) throw new Error('BPOM Filter button was not found.');
+    await page
+        .waitForFunction(
+            () => [...document.querySelectorAll('table')]
+                .some((table) => {
+                    const headers = (
+                        table
+                            .querySelector('thead')
+                            ?.textContent
+                        || ''
+                    )
+                        .replace(/\s+/g, ' ')
+                        .trim();
+
+                    if (
+                        !/Nomor Registrasi/i.test(headers)
+                        || !/Nama Produk/i.test(headers)
+                    ) {
+                        return false;
+                    }
+
+                    const rows =
+                        table.querySelectorAll(
+                            'tbody tr',
+                        );
+
+                    if (rows.length > 0) {
+                        return true;
+                    }
+
+                    const body = (
+                        table
+                            .querySelector('tbody')
+                            ?.textContent
+                        || ''
+                    )
+                        .replace(/\s+/g, ' ')
+                        .trim();
+
+                    return /tidak ada data|no data|data kosong/i
+                        .test(body);
+                }),
+            {
+                timeout: 30000,
+            },
+        )
+        .catch(() => undefined);
+}
+
+async function applyFilter(
+    page,
+    job,
+    delay,
+    crawlerLog,
+) {
+    const open = await visibleLocator(
+        page.getByRole(
+            'button',
+            {
+                name: /^Filter$/i,
+            },
+        ),
+    );
+
+    if (!open) {
+        throw new Error(
+            'BPOM Filter button was not found.',
+        );
+    }
 
     await open.click();
     await sleep(delay);
 
-    const placeholder = inputPlaceholderFor(job.kind);
+    const placeholder =
+        inputPlaceholderFor(job.kind);
+
     const field = placeholder
         ? await visibleLocator(
-            page.locator(`input[placeholder="${placeholder}"]`),
+            page.locator(
+                `input[placeholder="${placeholder}"]`,
+            ),
         )
         : null;
 
     if (!field) {
         throw new Error(
-            `BPOM filter field was not found: ${placeholder || job.kind}`,
+            `BPOM filter field was not found: ${
+                placeholder || job.kind
+            }`,
         );
     }
 
     await field.fill(job.value);
 
     const apply = await visibleLocator(
-        page.getByRole('button', { name: /^Filter$/i }),
-    );
-
-    if (!apply) throw new Error('BPOM apply Filter button was not found.');
-
-    await apply.click();
-    await sleep(Math.max(300, delay));
-
-    await page.waitForFunction(
-        () => [...document.querySelectorAll('table')].some((table) => {
-            const headers = (
-                table.querySelector('thead')?.textContent || ''
-            ).replace(/\s+/g, ' ').trim();
-
-            return (
-                /Nomor Registrasi/i.test(headers)
-                && /Nama Produk/i.test(headers)
-                && table.querySelectorAll('tbody tr').length > 0
-            );
-        }),
-        { timeout: 20000 },
-    ).catch(() =>
-        crawlerLog.debug(
-            'Filtered table did not signal readiness; continuing.',
+        page.getByRole(
+            'button',
+            {
+                name: /^Filter$/i,
+            },
         ),
     );
+
+    if (!apply) {
+        throw new Error(
+            'BPOM apply Filter button was not found.',
+        );
+    }
+
+    await apply.click();
+
+    await sleep(
+        Math.max(300, delay),
+    );
+
+    await page
+        .waitForFunction(
+            () => [...document.querySelectorAll('table')]
+                .some((table) => {
+                    const headers = (
+                        table
+                            .querySelector('thead')
+                            ?.textContent
+                        || ''
+                    )
+                        .replace(/\s+/g, ' ')
+                        .trim();
+
+                    return (
+                        /Nomor Registrasi/i.test(
+                            headers,
+                        )
+                        && /Nama Produk/i.test(
+                            headers,
+                        )
+                        && table
+                            .querySelectorAll(
+                                'tbody tr',
+                            )
+                            .length > 0
+                    );
+                }),
+            {
+                timeout: 20000,
+            },
+        )
+        .catch(() =>
+            crawlerLog.debug(
+                'Filtered table did not signal readiness; continuing.',
+            ),
+        );
 }
 
 async function extractDetailPairs(dialog) {
     return dialog.evaluate((root) => {
         const result = {};
 
-        const cleanText = (value) => String(value ?? '')
-            .replace(/\u00a0/g, ' ')
-            .replace(/[ \t]+/g, ' ')
-            .trim();
+        const cleanText = (value) =>
+            String(value ?? '')
+                .replace(/\u00a0/g, ' ')
+                .replace(/[ \t]+/g, ' ')
+                .trim();
 
-        const normalize = (value) => cleanText(value)
-            .replace(/:$/, '')
-            .toLowerCase();
+        const normalize = (value) =>
+            cleanText(value)
+                .replace(/:$/, '')
+                .toLowerCase();
 
         const labels = [
             'Nomor Registrasi',
@@ -639,32 +774,56 @@ async function extractDetailPairs(dialog) {
         ];
 
         const known = new Map(
-            labels.map((label) => [normalize(label), label]),
+            labels.map((label) => [
+                normalize(label),
+                label,
+            ]),
         );
 
         const put = (key, value) => {
-            const normalizedKey = cleanText(key).replace(/:$/, '');
-            const normalizedValue = cleanText(value);
+            const normalizedKey =
+                cleanText(key)
+                    .replace(/:$/, '');
+
+            const normalizedValue =
+                cleanText(value);
 
             if (
                 normalizedKey
                 && normalizedValue
-                && normalizedKey !== normalizedValue
+                && normalizedKey
+                    !== normalizedValue
                 && !result[normalizedKey]
             ) {
-                result[normalizedKey] = normalizedValue;
+                result[normalizedKey] =
+                    normalizedValue;
             }
         };
 
-        root.querySelectorAll('tr').forEach((tr) => {
-            const cells = [...tr.querySelectorAll(':scope > th, :scope > td')]
-                .map((el) => cleanText(el.innerText || el.textContent))
-                .filter(Boolean);
+        root.querySelectorAll('tr')
+            .forEach((tr) => {
+                const cells = [
+                    ...tr.querySelectorAll(
+                        ':scope > th, :scope > td',
+                    ),
+                ]
+                    .map((el) =>
+                        cleanText(
+                            el.innerText
+                            || el.textContent,
+                        ),
+                    )
+                    .filter(Boolean);
 
-            if (cells.length >= 2) {
-                put(cells[0], cells.slice(1).join(' '));
-            }
-        });
+                if (cells.length >= 2) {
+                    put(
+                        cells[0],
+                        cells
+                            .slice(1)
+                            .join(' '),
+                    );
+                }
+            });
 
         const lines = (
             root.innerText
@@ -674,38 +833,91 @@ async function extractDetailPairs(dialog) {
             .split(/\r?\n/)
             .map(cleanText)
             .filter(Boolean)
-            .filter((line) =>
-                !/^Detail Produk$/i.test(line)
-                && !/^Close$/i.test(line)
-                && line !== '×',
+            .filter(
+                (line) =>
+                    !/^Detail Produk$/i.test(line)
+                    && !/^Close$/i.test(line)
+                    && line !== '×',
             );
 
-        for (let i = 0; i < lines.length; i++) {
+        for (
+            let i = 0;
+            i < lines.length;
+            i++
+        ) {
             const line = lines[i];
-            const colon = line.match(/^([^:]{2,50})\s*:\s*(.+)$/);
 
-            if (colon && known.has(normalize(colon[1]))) {
-                put(known.get(normalize(colon[1])), colon[2]);
+            const colon = line.match(
+                /^([^:]{2,50})\s*:\s*(.+)$/,
+            );
+
+            if (
+                colon
+                && known.has(
+                    normalize(colon[1]),
+                )
+            ) {
+                put(
+                    known.get(
+                        normalize(colon[1]),
+                    ),
+                    colon[2],
+                );
+
                 continue;
             }
 
-            const label = known.get(normalize(line));
-            if (!label) continue;
+            const label = known.get(
+                normalize(line),
+            );
+
+            if (!label) {
+                continue;
+            }
 
             const values = [];
 
-            for (let j = i + 1; j < lines.length; j++) {
-                const candidate = lines[j];
+            for (
+                let j = i + 1;
+                j < lines.length;
+                j++
+            ) {
+                const candidate =
+                    lines[j];
 
-                if (known.has(normalize(candidate))) break;
+                if (
+                    known.has(
+                        normalize(candidate),
+                    )
+                ) {
+                    break;
+                }
 
-                const nextColon = candidate.match(/^([^:]{2,50})\s*:/);
-                if (nextColon && known.has(normalize(nextColon[1]))) break;
+                const nextColon =
+                    candidate.match(
+                        /^([^:]{2,50})\s*:/,
+                    );
+
+                if (
+                    nextColon
+                    && known.has(
+                        normalize(
+                            nextColon[1],
+                        ),
+                    )
+                ) {
+                    break;
+                }
 
                 values.push(candidate);
             }
 
-            if (values.length) put(label, values.join(' '));
+            if (values.length) {
+                put(
+                    label,
+                    values.join(' '),
+                );
+            }
         }
 
         return result;
@@ -717,27 +929,57 @@ async function getVisibleDialog(page) {
         '.modal:visible, [role="dialog"]:visible',
     );
 
-    const count = await candidates.count();
+    const count =
+        await candidates.count();
 
-    for (let i = count - 1; i >= 0; i--) {
-        const dialog = candidates.nth(i);
+    for (
+        let i = count - 1;
+        i >= 0;
+        i--
+    ) {
+        const dialog =
+            candidates.nth(i);
+
         const text = clean(
-            await dialog.innerText().catch(() => ''),
+            await dialog
+                .innerText()
+                .catch(() => ''),
         );
 
-        if (/detail produk/i.test(text) || text.length > 20) return dialog;
+        if (
+            /detail produk/i.test(text)
+            || text.length > 20
+        ) {
+            return dialog;
+        }
     }
 
     return null;
 }
 
-async function waitForBlockingOverlayToClear(page, timeoutMs = 4000) {
-    const overlay = page.locator('.blockUI.blockOverlay:visible').first();
+async function waitForBlockingOverlayToClear(
+    page,
+    timeoutMs = 4000,
+) {
+    const overlay = page
+        .locator(
+            '.blockUI.blockOverlay:visible',
+        )
+        .first();
 
-    if (!await overlay.count().catch(() => 0)) return true;
+    if (
+        !await overlay
+            .count()
+            .catch(() => 0)
+    ) {
+        return true;
+    }
 
     return overlay
-        .waitFor({ state: 'hidden', timeout: timeoutMs })
+        .waitFor({
+            state: 'hidden',
+            timeout: timeoutMs,
+        })
         .then(() => true)
         .catch(() => false);
 }
@@ -745,79 +987,155 @@ async function waitForBlockingOverlayToClear(page, timeoutMs = 4000) {
 async function cleanupDetailUi(
     page,
     crawlerLog,
-    { force = false } = {},
+    {
+        force = false,
+    } = {},
 ) {
     let forcedCleanup = false;
 
-    await page.keyboard.press('Escape').catch(() => undefined);
+    await page
+        .keyboard
+        .press('Escape')
+        .catch(() => undefined);
 
     const dialog = await visibleLocator(
-        page.locator('#modalDetail:visible, .modal:visible'),
+        page.locator(
+            '#modalDetail:visible, .modal:visible',
+        ),
     ).catch(() => null);
 
     if (dialog) {
-        const closeByRole = await visibleLocator(
-            dialog.getByRole('button', { name: /^(Close|Tutup)$/i }),
-        ).catch(() => null);
-
-        const closeBySelector = closeByRole
-            ? null
-            : await visibleLocator(
-                dialog.locator(
-                    '[data-bs-dismiss="modal"], [data-dismiss="modal"], .btn-close, button.close',
+        const closeByRole =
+            await visibleLocator(
+                dialog.getByRole(
+                    'button',
+                    {
+                        name:
+                            /^(Close|Tutup)$/i,
+                    },
                 ),
             ).catch(() => null);
 
-        const close = closeByRole || closeBySelector;
+        const closeBySelector =
+            closeByRole
+                ? null
+                : await visibleLocator(
+                    dialog.locator(
+                        '[data-bs-dismiss="modal"], [data-dismiss="modal"], .btn-close, button.close',
+                    ),
+                ).catch(() => null);
+
+        const close =
+            closeByRole
+            || closeBySelector;
 
         if (close) {
             await close
-                .click({ timeout: 2500, force: true })
-                .catch(() => undefined);
+                .click({
+                    timeout: 2500,
+                    force: true,
+                })
+                .catch(
+                    () => undefined,
+                );
         }
 
-        await page.keyboard.press('Escape').catch(() => undefined);
+        await page
+            .keyboard
+            .press('Escape')
+            .catch(() => undefined);
     }
 
-    const modalHidden = await page
-        .locator('#modalDetail:visible, .modal:visible')
-        .first()
-        .waitFor({ state: 'hidden', timeout: 1800 })
-        .then(() => true)
-        .catch(() => false);
+    const modalHidden =
+        await page
+            .locator(
+                '#modalDetail:visible, .modal:visible',
+            )
+            .first()
+            .waitFor({
+                state: 'hidden',
+                timeout: 1800,
+            })
+            .then(() => true)
+            .catch(() => false);
 
-    let overlayGone = await waitForBlockingOverlayToClear(page, 2500);
+    let overlayGone =
+        await waitForBlockingOverlayToClear(
+            page,
+            2500,
+        );
 
     if (
         force
-        && (!modalHidden || !overlayGone)
+        && (
+            !modalHidden
+            || !overlayGone
+        )
     ) {
         forcedCleanup = true;
 
-        await page.evaluate(() => {
-            const modal = document.querySelector('#modalDetail');
+        await page
+            .evaluate(() => {
+                const modal =
+                    document.querySelector(
+                        '#modalDetail',
+                    );
 
-            if (modal) {
-                modal.classList.remove('show');
-                modal.setAttribute('aria-hidden', 'true');
-                modal.removeAttribute('aria-modal');
-                modal.style.display = 'none';
-            }
+                if (modal) {
+                    modal.classList
+                        .remove('show');
 
-            document.body.classList.remove('modal-open');
-            document.body.style.removeProperty('padding-right');
-            document.body.style.removeProperty('overflow');
+                    modal.setAttribute(
+                        'aria-hidden',
+                        'true',
+                    );
 
-            document
-                .querySelectorAll('.modal-backdrop')
-                .forEach((element) => element.remove());
+                    modal.removeAttribute(
+                        'aria-modal',
+                    );
 
-            document
-                .querySelectorAll('.blockUI.blockOverlay, .blockUI.blockMsg')
-                .forEach((element) => element.remove());
-        }).catch(() => undefined);
+                    modal.style.display =
+                        'none';
+                }
 
-        overlayGone = await waitForBlockingOverlayToClear(page, 1000);
+                document.body.classList
+                    .remove('modal-open');
+
+                document.body.style
+                    .removeProperty(
+                        'padding-right',
+                    );
+
+                document.body.style
+                    .removeProperty(
+                        'overflow',
+                    );
+
+                document
+                    .querySelectorAll(
+                        '.modal-backdrop',
+                    )
+                    .forEach(
+                        (element) =>
+                            element.remove(),
+                    );
+
+                document
+                    .querySelectorAll(
+                        '.blockUI.blockOverlay, .blockUI.blockMsg',
+                    )
+                    .forEach(
+                        (element) =>
+                            element.remove(),
+                    );
+            })
+            .catch(() => undefined);
+
+        overlayGone =
+            await waitForBlockingOverlayToClear(
+                page,
+                1000,
+            );
     }
 
     if (forcedCleanup) {
@@ -829,7 +1147,9 @@ async function cleanupDetailUi(
     return {
         modalHidden:
             !await page
-                .locator('#modalDetail:visible, .modal:visible')
+                .locator(
+                    '#modalDetail:visible, .modal:visible',
+                )
                 .first()
                 .count()
                 .catch(() => 0),
@@ -848,48 +1168,81 @@ async function enrichFromRow(
     const maxAttempts = 2;
     let lastError = null;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    for (
+        let attempt = 1;
+        attempt <= maxAttempts;
+        attempt++
+    ) {
         try {
             if (attempt > 1) {
                 detailStats.localRetries++;
-                await page.waitForTimeout(400);
+
+                await page
+                    .waitForTimeout(400);
             }
 
             await cleanupDetailUi(
                 page,
                 crawlerLog,
-                { force: true },
+                {
+                    force: true,
+                },
             );
 
-            const clickable = row.locator(
-                'a, button, [role="button"]',
-            );
-            const count = await clickable.count();
+            const clickable =
+                row.locator(
+                    'a, button, [role="button"]',
+                );
 
-            crawlerLog.debug('Opening BPOM product detail.', {
-                clickableCount: count,
-                attempt,
-            });
+            const count =
+                await clickable.count();
+
+            crawlerLog.debug(
+                'Opening BPOM product detail.',
+                {
+                    clickableCount:
+                        count,
+                    attempt,
+                },
+            );
 
             if (count > 0) {
                 await clickable
                     .first()
-                    .click({ timeout: 8000 });
+                    .click({
+                        timeout: 8000,
+                    });
             } else {
-                await row.click({ timeout: 8000 });
+                await row.click({
+                    timeout: 8000,
+                });
             }
 
             await page.waitForTimeout(
-                Math.max(500, Math.min(delay, 1200)),
+                Math.max(
+                    500,
+                    Math.min(
+                        delay,
+                        1200,
+                    ),
+                ),
             );
 
             await page
-                .locator('#modalDetail:visible, .modal:visible')
+                .locator(
+                    '#modalDetail:visible, .modal:visible',
+                )
                 .first()
-                .waitFor({ state: 'visible', timeout: 8000 })
+                .waitFor({
+                    state: 'visible',
+                    timeout: 8000,
+                })
                 .catch(() => undefined);
 
-            const dialog = await getVisibleDialog(page);
+            const dialog =
+                await getVisibleDialog(
+                    page,
+                );
 
             if (!dialog) {
                 throw new Error(
@@ -897,25 +1250,47 @@ async function enrichFromRow(
                 );
             }
 
-            const dialogText = clean(
-                await dialog.innerText().catch(() => ''),
+            const dialogText =
+                clean(
+                    await dialog
+                        .innerText()
+                        .catch(
+                            () => '',
+                        ),
+                );
+
+            crawlerLog.debug(
+                'BPOM product detail dialog detected.',
+                {
+                    textPreview:
+                        dialogText.slice(
+                            0,
+                            2000,
+                        ),
+                    attempt,
+                },
             );
 
-            crawlerLog.debug('BPOM product detail dialog detected.', {
-                textPreview: dialogText.slice(0, 2000),
-                attempt,
-            });
+            const rawPairs =
+                await extractDetailPairs(
+                    dialog,
+                );
 
-            const rawPairs = await extractDetailPairs(dialog);
-            const details = mapDetails(rawPairs);
+            const details =
+                mapDetails(rawPairs);
 
             crawlerLog.debug(
                 'BPOM product detail raw fields.',
-                { rawPairs },
+                {
+                    rawPairs,
+                },
             );
+
             crawlerLog.debug(
                 'BPOM mapped product details.',
-                { details },
+                {
+                    details,
+                },
             );
 
             detailStats.succeeded++;
@@ -932,14 +1307,18 @@ async function enrichFromRow(
                 {
                     attempt,
                     maxAttempts,
-                    error: error?.message || String(error),
+                    error:
+                        error?.message
+                        || String(error),
                 },
             );
         } finally {
             await cleanupDetailUi(
                 page,
                 crawlerLog,
-                { force: true },
+                {
+                    force: true,
+                },
             );
         }
     }
@@ -949,11 +1328,17 @@ async function enrichFromRow(
     crawlerLog.warning(
         'Skipping BPOM product detail after local retries.',
         {
-            error: lastError?.message || String(lastError || ''),
+            error:
+                lastError?.message
+                || String(
+                    lastError || '',
+                ),
         },
     );
 
-    return { __detailFetched: false };
+    return {
+        __detailFetched: false,
+    };
 }
 
 async function extractCurrentPage(
@@ -974,192 +1359,344 @@ async function extractCurrentPage(
     },
     crawlerLog,
 ) {
-    const table = await getProductTable(page);
-    const rows = table.locator('tbody tr');
+    const table =
+        await getProductTable(page);
+
+    const rows =
+        table.locator('tbody tr');
+
     const results = [];
-    const rowCount = await rows.count();
+
+    const rowCount =
+        await rows.count();
 
     for (
         let i = 0;
-        i < rowCount && results.length < maxRemaining;
+        i < rowCount
+        && results.length < maxRemaining;
         i++
     ) {
-        const row = rows.nth(i);
-        const cells = await row.locator('td').allInnerTexts();
+        const row =
+            rows.nth(i);
 
-        if (cells.length < 3) continue;
+        const cells =
+            await row
+                .locator('td')
+                .allInnerTexts();
 
         if (
-            /tidak ada data|no data|data tidak/i.test(
-                cells.map(clean).join(' '),
-            )
+            cells.length < 3
         ) {
             continue;
         }
 
-        const registration = parseRegistrationCell(cells[1] || '');
-        const product = parseProductCell(cells[2] || '');
-        const registrant = parseRegistrantCell(cells[3] || '');
+        if (
+            /tidak ada data|no data|data tidak/i
+                .test(
+                    cells
+                        .map(clean)
+                        .join(' '),
+                )
+        ) {
+            continue;
+        }
+
+        const registration =
+            parseRegistrationCell(
+                cells[1] || '',
+            );
+
+        const product =
+            parseProductCell(
+                cells[2] || '',
+            );
+
+        const registrant =
+            parseRegistrantCell(
+                cells[3] || '',
+            );
 
         const list = {
-            productType: clean(cells[0]) || 'KO',
-            registrationNumber: registration.registrationNumber,
-            issuedDate: registration.issuedDate,
-            productName: product.productName,
-            brand: product.brand,
-            packaging: product.packaging,
-            registrant: registrant.registrant,
-            registrantLocation: registrant.registrantLocation,
+            productType:
+                clean(cells[0])
+                || 'KO',
+            registrationNumber:
+                registration
+                    .registrationNumber,
+            issuedDate:
+                registration.issuedDate,
+            productName:
+                product.productName,
+            brand:
+                product.brand,
+            packaging:
+                product.packaging,
+            registrant:
+                registrant.registrant,
+            registrantLocation:
+                registrant
+                    .registrantLocation,
         };
 
-        if (!list.registrationNumber) continue;
+        if (
+            !list.registrationNumber
+        ) {
+            continue;
+        }
 
-        const previousEntry = previousRecords[list.registrationNumber];
-        const previousRecord = previousEntry?.record
-            ? canonicalizeLegacyRecord(previousEntry.record)
-            : null;
+        const previousEntry =
+            previousRecords[
+                list.registrationNumber
+            ];
 
-        const currentBasicHash = basicHash(list);
-        const previousBasicHash = previousRecord
-            ? basicHash(previousRecord)
-            : '';
+        const previousRecord =
+            previousEntry?.record
+                ? canonicalizeLegacyRecord(
+                    previousEntry.record,
+                )
+                : null;
 
-        const listingChanged = previousRecord
-            ? previousBasicHash !== currentBasicHash
-            : true;
+        const currentBasicHash =
+            basicHash(list);
 
-        let shouldFetchDetail = false;
-        let detailFetchReason = 'NOT_REQUESTED';
+        const previousBasicHash =
+            previousRecord
+                ? basicHash(
+                    previousRecord,
+                )
+                : '';
+
+        const listingChanged =
+            previousRecord
+                ? previousBasicHash
+                    !== currentBasicHash
+                : true;
+
+        let shouldFetchDetail =
+            false;
+
+        let detailFetchReason =
+            'NOT_REQUESTED';
 
         if (
-            !detailDecisionRegistrationNumbers.has(
-                list.registrationNumber,
-            )
+            !detailDecisionRegistrationNumbers
+                .has(
+                    list.registrationNumber,
+                )
         ) {
             const previousDetailFetchedAt =
                 resolvePreviousDetailFetchedAt(
                     previousEntry,
                     previousStateUpdatedAt,
                 );
-            const previousDetailAgeDays = detailAgeDays(
-                previousDetailFetchedAt,
-                runStartedAt,
-            );
 
-            if (detailStrategy === 'always') {
-                shouldFetchDetail = true;
-                detailFetchReason = 'ALWAYS';
-            } else if (
-                detailStrategy === 'changesOnly'
-                && detectChanges
-                && (!previousRecord || listingChanged)
+            const previousDetailAgeDays =
+                detailAgeDays(
+                    previousDetailFetchedAt,
+                    runStartedAt,
+                );
+
+            if (
+                detailStrategy === 'always'
             ) {
                 shouldFetchDetail = true;
-                detailFetchReason = !previousRecord
-                    ? 'FIRST_SEEN'
-                    : 'LISTING_CHANGED';
-            } else if (detailStrategy === 'staleOnly') {
+                detailFetchReason =
+                    'ALWAYS';
+            } else if (
+                detailStrategy
+                    === 'changesOnly'
+                && detectChanges
+                && (
+                    !previousRecord
+                    || listingChanged
+                )
+            ) {
+                shouldFetchDetail = true;
+
+                detailFetchReason =
+                    !previousRecord
+                        ? 'FIRST_SEEN'
+                        : 'LISTING_CHANGED';
+            } else if (
+                detailStrategy
+                    === 'staleOnly'
+            ) {
                 if (!previousRecord) {
-                    shouldFetchDetail = true;
-                    detailFetchReason = 'FIRST_SEEN';
-                } else if (listingChanged) {
-                    shouldFetchDetail = true;
-                    detailFetchReason = 'LISTING_CHANGED';
-                } else if (!previousDetailFetchedAt) {
-                    shouldFetchDetail = true;
-                    detailFetchReason = 'NO_DETAIL_TIMESTAMP';
+                    shouldFetchDetail =
+                        true;
+
+                    detailFetchReason =
+                        'FIRST_SEEN';
                 } else if (
-                    previousDetailAgeDays === null
-                    || previousDetailAgeDays >= detailMaxAgeDays
+                    listingChanged
                 ) {
-                    shouldFetchDetail = true;
-                    detailFetchReason = 'STALE_DETAIL';
+                    shouldFetchDetail =
+                        true;
+
+                    detailFetchReason =
+                        'LISTING_CHANGED';
+                } else if (
+                    !previousDetailFetchedAt
+                ) {
+                    shouldFetchDetail =
+                        true;
+
+                    detailFetchReason =
+                        'NO_DETAIL_TIMESTAMP';
+                } else if (
+                    previousDetailAgeDays
+                        === null
+                    || previousDetailAgeDays
+                        >= detailMaxAgeDays
+                ) {
+                    shouldFetchDetail =
+                        true;
+
+                    detailFetchReason =
+                        'STALE_DETAIL';
                 } else {
-                    detailFetchReason = 'DETAIL_FRESH';
+                    detailFetchReason =
+                        'DETAIL_FRESH';
                 }
             }
 
             if (
                 shouldFetchDetail
-                && detailStrategy === 'staleOnly'
-                && detailFetchLimitPerRun > 0
-                && detailStats.requested >= detailFetchLimitPerRun
+                && detailStrategy
+                    === 'staleOnly'
+                && detailFetchLimitPerRun
+                    > 0
+                && detailStats.requested
+                    >= detailFetchLimitPerRun
             ) {
-                shouldFetchDetail = false;
-                detailFetchReason = 'DETAIL_FETCH_LIMIT_REACHED';
-                detailStats.budgetSkipped++;
+                shouldFetchDetail =
+                    false;
+
+                detailFetchReason =
+                    'DETAIL_FETCH_LIMIT_REACHED';
+
+                detailStats
+                    .budgetSkipped++;
             }
 
-            detailDecisionRegistrationNumbers.add(
-                list.registrationNumber,
-            );
+            detailDecisionRegistrationNumbers
+                .add(
+                    list.registrationNumber,
+                );
 
             if (shouldFetchDetail) {
                 detailStats.requested++;
-                detailStats.byReason[detailFetchReason] =
-                    (detailStats.byReason[detailFetchReason] || 0) + 1;
+
+                detailStats
+                    .byReason[
+                        detailFetchReason
+                    ] =
+                        (
+                            detailStats
+                                .byReason[
+                                    detailFetchReason
+                                ]
+                            || 0
+                        ) + 1;
             } else {
                 detailStats.skipped++;
             }
         }
 
-        const detail = shouldFetchDetail
-            ? await enrichFromRow(
-                page,
-                row,
-                requestDelayMs,
-                crawlerLog,
-                detailStats,
-            )
-            : { __detailFetched: false };
+        const detail =
+            shouldFetchDetail
+                ? await enrichFromRow(
+                    page,
+                    row,
+                    requestDelayMs,
+                    crawlerLog,
+                    detailStats,
+                )
+                : {
+                    __detailFetched:
+                        false,
+                };
 
-        const priorDetailKnown = previousDetailKnown(previousEntry);
-        const currentKnownDetailFields = previousKnownDetailFields(
-            previousEntry,
-        );
+        const priorDetailKnown =
+            previousDetailKnown(
+                previousEntry,
+            );
+
+        const currentKnownDetailFields =
+            previousKnownDetailFields(
+                previousEntry,
+            );
+
         const detailValues = {};
 
-        for (const field of DETAIL_FIELDS) {
-            const previousValue = clean(previousRecord?.[field]);
-            const currentValue = clean(detail[field]);
+        for (
+            const field
+            of DETAIL_FIELDS
+        ) {
+            const previousValue =
+                clean(
+                    previousRecord
+                        ?.[field],
+                );
 
-            detailValues[field] = currentValue || previousValue;
+            const currentValue =
+                clean(
+                    detail[field],
+                );
+
+            detailValues[field] =
+                currentValue
+                || previousValue;
 
             if (
-                detail.__detailFetched === true
+                detail.__detailFetched
+                    === true
                 && currentValue
             ) {
-                currentKnownDetailFields.add(field);
+                currentKnownDetailFields
+                    .add(field);
             }
         }
 
-        const currentDetailKnown = Boolean(
-            priorDetailKnown
-            || detail.__detailFetched === true
-            || currentKnownDetailFields.size > 0,
-        );
+        const currentDetailKnown =
+            Boolean(
+                priorDetailKnown
+                || detail
+                    .__detailFetched
+                    === true
+                || currentKnownDetailFields
+                    .size > 0,
+            );
 
-        /*
-         * Listing fields are canonical. The detail modal is enrichment-only
-         * and must never overwrite productName, brand, issuedDate,
-         * packaging, registrant, or registrantLocation.
-         */
         const record = {
             ...list,
             ...detailValues,
-            category: 'Kosmetika',
-            source: 'BPOM RI - Cek Produk',
-            sourceUrl: BASE_URL,
+            category:
+                'Kosmetika',
+            source:
+                'BPOM RI - Cek Produk',
+            sourceUrl:
+                BASE_URL,
             matchedBy: {
                 type: job.kind,
                 value: job.value,
             },
-            scrapedAt: isoNow(),
-            __basicHash: currentBasicHash,
-            __detailHash: detailHash(detailValues),
-            __detailKnown: currentDetailKnown,
-            __detailKnownFields: [...currentKnownDetailFields],
-            __detailFetched: detail.__detailFetched === true,
+            scrapedAt:
+                isoNow(),
+            __basicHash:
+                currentBasicHash,
+            __detailHash:
+                detailHash(
+                    detailValues,
+                ),
+            __detailKnown:
+                currentDetailKnown,
+            __detailKnownFields: [
+                ...currentKnownDetailFields,
+            ],
+            __detailFetched:
+                detail.__detailFetched
+                === true,
         };
 
         results.push(record);
@@ -1168,57 +1705,352 @@ async function extractCurrentPage(
     return results;
 }
 
-async function productTableFingerprint(page) {
-    const table = await getProductTable(page).catch(() => null);
-    if (!table) return '';
+async function getPaginationSnapshot(
+    page,
+) {
+    const table =
+        await getProductTable(page)
+            .catch(() => null);
 
-    const rows = await table
-        .locator('tbody tr')
-        .allInnerTexts()
-        .catch(() => []);
-
-    const sampled = [
-        ...rows.slice(0, 3),
-        ...rows.slice(-2),
-    ].map(clean);
-
-    const activePage = clean(
-        await page
-            .locator(
-                '.paginate_button.current:visible, .pagination .active:visible',
-            )
-            .first()
-            .innerText()
-            .catch(() => ''),
-    );
-
-    return `${activePage}::${sampled.join('||')}`;
-}
-
-async function nextButtonState(page) {
-    const next = await visibleLocator(
-        page.getByRole('button', { name: /Selanjutnya/i }),
-    );
-
-    if (!next) {
+    if (!table) {
         return {
-            next: null,
-            disabled: true,
+            activePage: '',
+            firstRow: '',
+            nextExists: false,
+            nextDisabled: true,
         };
     }
 
-    const disabled =
-        await next.isDisabled().catch(() => false)
-        || await next.getAttribute('disabled') !== null
-        || await next.getAttribute('aria-disabled') === 'true'
-        || clean(await next.getAttribute('class'))
-            .split(' ')
-            .includes('disabled');
+    return table.evaluate(
+        (tableElement) => {
+            const cleanText =
+                (value) =>
+                    String(value ?? '')
+                        .replace(
+                            /\u00a0/g,
+                            ' ',
+                        )
+                        .replace(
+                            /\s+/g,
+                            ' ',
+                        )
+                        .trim();
 
-    return {
-        next,
-        disabled,
-    };
+            const wrapper =
+                tableElement
+                    .closest(
+                        '.dataTables_wrapper',
+                    )
+                || tableElement
+                    .parentElement
+                    ?.closest(
+                        '.dataTables_wrapper',
+                    )
+                || tableElement
+                    .parentElement
+                || document;
+
+            const active =
+                wrapper.querySelector(
+                    '.paginate_button.current, .pagination .active',
+                );
+
+            const next =
+                wrapper.querySelector(
+                    '.paginate_button.next, button[id$="_next"]',
+                );
+
+            const firstRow =
+                tableElement
+                    .querySelector(
+                        'tbody tr',
+                    );
+
+            const nextClass =
+                cleanText(
+                    next?.getAttribute(
+                        'class',
+                    ),
+                );
+
+            const nextDisabled =
+                !next
+                || next.hasAttribute(
+                    'disabled',
+                )
+                || next.getAttribute(
+                    'aria-disabled',
+                ) === 'true'
+                || nextClass
+                    .split(' ')
+                    .includes(
+                        'disabled',
+                    );
+
+            return {
+                activePage:
+                    cleanText(
+                        active
+                            ?.textContent,
+                    ),
+                firstRow:
+                    cleanText(
+                        firstRow
+                            ?.textContent,
+                    ),
+                nextExists:
+                    Boolean(next),
+                nextDisabled,
+            };
+        },
+    );
+}
+
+async function triggerNextPage(page) {
+    const table =
+        await getProductTable(page)
+            .catch(() => null);
+
+    if (!table) {
+        return {
+            clicked: false,
+            disabled: true,
+            reason:
+                'PRODUCT_TABLE_NOT_FOUND',
+        };
+    }
+
+    return table.evaluate(
+        (tableElement) => {
+            const wrapper =
+                tableElement
+                    .closest(
+                        '.dataTables_wrapper',
+                    )
+                || tableElement
+                    .parentElement
+                    ?.closest(
+                        '.dataTables_wrapper',
+                    )
+                || tableElement
+                    .parentElement
+                || document;
+
+            const next =
+                wrapper.querySelector(
+                    '.paginate_button.next, button[id$="_next"]',
+                );
+
+            if (!next) {
+                return {
+                    clicked: false,
+                    disabled: true,
+                    reason:
+                        'NEXT_BUTTON_NOT_FOUND',
+                };
+            }
+
+            const classNames =
+                String(
+                    next.getAttribute(
+                        'class',
+                    )
+                    || '',
+                )
+                    .split(/\s+/)
+                    .filter(Boolean);
+
+            const disabled =
+                next.hasAttribute(
+                    'disabled',
+                )
+                || next.getAttribute(
+                    'aria-disabled',
+                ) === 'true'
+                || classNames.includes(
+                    'disabled',
+                );
+
+            if (disabled) {
+                return {
+                    clicked: false,
+                    disabled: true,
+                    reason:
+                        'NEXT_BUTTON_DISABLED',
+                };
+            }
+
+            next.click();
+
+            return {
+                clicked: true,
+                disabled: false,
+                reason:
+                    'CLICKED',
+            };
+        },
+    );
+}
+
+async function waitForPaginationMove(
+    page,
+    before,
+    timeoutMs = 4500,
+) {
+    return page
+        .waitForFunction(
+            (previous) => {
+                const cleanText =
+                    (value) =>
+                        String(
+                            value ?? '',
+                        )
+                            .replace(
+                                /\u00a0/g,
+                                ' ',
+                            )
+                            .replace(
+                                /\s+/g,
+                                ' ',
+                            )
+                            .trim();
+
+                const isVisible =
+                    (element) =>
+                        Boolean(
+                            element
+                            && (
+                                element
+                                    .offsetWidth
+                                || element
+                                    .offsetHeight
+                                || element
+                                    .getClientRects()
+                                    .length
+                            ),
+                        );
+
+                const tables = [
+                    ...document
+                        .querySelectorAll(
+                            'table',
+                        ),
+                ].filter(
+                    (table) => {
+                        if (
+                            !isVisible(
+                                table,
+                            )
+                        ) {
+                            return false;
+                        }
+
+                        const headers =
+                            cleanText(
+                                table
+                                    .querySelector(
+                                        'thead',
+                                    )
+                                    ?.textContent,
+                            );
+
+                        return (
+                            /Nomor Registrasi/i
+                                .test(
+                                    headers,
+                                )
+                            && /Nama Produk/i
+                                .test(
+                                    headers,
+                                )
+                        );
+                    },
+                );
+
+                const table =
+                    tables.find(
+                        (candidate) =>
+                            candidate
+                                .querySelectorAll(
+                                    'tbody tr',
+                                )
+                                .length > 0,
+                    )
+                    || tables[0];
+
+                if (!table) {
+                    return false;
+                }
+
+                const wrapper =
+                    table.closest(
+                        '.dataTables_wrapper',
+                    )
+                    || table
+                        .parentElement
+                        ?.closest(
+                            '.dataTables_wrapper',
+                        )
+                    || table
+                        .parentElement
+                    || document;
+
+                const active =
+                    wrapper.querySelector(
+                        '.paginate_button.current, .pagination .active',
+                    );
+
+                const firstRow =
+                    table.querySelector(
+                        'tbody tr',
+                    );
+
+                const currentActivePage =
+                    cleanText(
+                        active
+                            ?.textContent,
+                    );
+
+                const currentFirstRow =
+                    cleanText(
+                        firstRow
+                            ?.textContent,
+                    );
+
+                const overlayVisible =
+                    [
+                        ...document
+                            .querySelectorAll(
+                                '.blockUI.blockOverlay',
+                            ),
+                    ].some(isVisible);
+
+                if (overlayVisible) {
+                    return false;
+                }
+
+                return (
+                    (
+                        previous.activePage
+                        && currentActivePage
+                        && currentActivePage
+                            !== previous.activePage
+                    )
+                    || (
+                        previous.firstRow
+                        && currentFirstRow
+                        && currentFirstRow
+                            !== previous.firstRow
+                    )
+                );
+            },
+            before,
+            {
+                timeout: timeoutMs,
+            },
+        )
+        .then(() => true)
+        .catch(() => false);
 }
 
 async function clickNext(
@@ -1227,109 +2059,149 @@ async function clickNext(
     crawlerLog,
     paginationStats,
 ) {
-    const initialState = await nextButtonState(page);
+    const before =
+        await getPaginationSnapshot(
+            page,
+        );
 
-    if (!initialState.next || initialState.disabled) {
+    if (
+        !before.nextExists
+        || before.nextDisabled
+    ) {
         return {
             status: 'end',
             recovered: false,
         };
     }
 
-    const before = await productTableFingerprint(page);
-    const maxAttempts = 3;
+    const maxAttempts = 2;
     let lastError = null;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    for (
+        let attempt = 1;
+        attempt <= maxAttempts;
+        attempt++
+    ) {
         if (attempt > 1) {
-            paginationStats.localRetries++;
-            await page.waitForTimeout(300 * attempt);
+            paginationStats
+                .localRetries++;
+
+            await page
+                .waitForTimeout(250);
         }
 
-        const cleanup = await cleanupDetailUi(
-            page,
-            crawlerLog,
-            { force: true },
-        );
+        const cleanup =
+            await cleanupDetailUi(
+                page,
+                crawlerLog,
+                {
+                    force: true,
+                },
+            );
 
-        if (cleanup.forcedCleanup) {
-            paginationStats.uiCleanups++;
+        if (
+            cleanup.forcedCleanup
+        ) {
+            paginationStats
+                .uiCleanups++;
         }
 
-        const currentBeforeAttempt =
-            await productTableFingerprint(page);
+        const current =
+            await getPaginationSnapshot(
+                page,
+            );
 
-        if (currentBeforeAttempt && currentBeforeAttempt !== before) {
-            if (attempt > 1) paginationStats.recoveries++;
+        if (
+            (
+                before.activePage
+                && current.activePage
+                && current.activePage
+                    !== before.activePage
+            )
+            || (
+                before.firstRow
+                && current.firstRow
+                && current.firstRow
+                    !== before.firstRow
+            )
+        ) {
+            if (attempt > 1) {
+                paginationStats
+                    .recoveries++;
+            }
 
             return {
                 status: 'moved',
-                recovered: attempt > 1,
+                recovered:
+                    attempt > 1,
             };
         }
 
-        let state = await nextButtonState(page);
-
-        if (!state.next) {
-            lastError = new Error(
-                'BPOM next-page button disappeared during pagination recovery.',
-            );
-            continue;
-        }
-
-        if (state.disabled) {
-            await page.waitForTimeout(1000);
-            state = await nextButtonState(page);
-
-            const afterDisabledWait =
-                await productTableFingerprint(page);
-
-            if (afterDisabledWait && afterDisabledWait !== before) {
-                if (attempt > 1) paginationStats.recoveries++;
-
-                return {
-                    status: 'moved',
-                    recovered: attempt > 1,
-                };
-            }
-
-            if (!state.next || state.disabled) {
-                lastError = new Error(
-                    'BPOM next-page button remained disabled before the table changed.',
+        if (
+            !current.nextExists
+            || current.nextDisabled
+        ) {
+            lastError =
+                new Error(
+                    'BPOM next-page button became unavailable before pagination completed.',
                 );
-                continue;
-            }
-        }
+        } else {
+            try {
+                const triggered =
+                    await triggerNextPage(
+                        page,
+                    );
 
-        try {
-            await state.next.click({ timeout: 5000 });
+                if (
+                    !triggered.clicked
+                ) {
+                    lastError =
+                        new Error(
+                            `BPOM next-page trigger failed: ${triggered.reason}`,
+                        );
+                } else {
+                    const moved =
+                        await waitForPaginationMove(
+                            page,
+                            before,
+                            4500,
+                        );
 
-            await page.waitForTimeout(
-                Math.max(250, Math.min(delay, 1000)),
-            );
+                    if (moved) {
+                        await page
+                            .waitForTimeout(
+                                Math.max(
+                                    100,
+                                    Math.min(
+                                        delay,
+                                        350,
+                                    ),
+                                ),
+                            );
 
-            const deadline = Date.now() + 12000;
+                        if (
+                            attempt > 1
+                        ) {
+                            paginationStats
+                                .recoveries++;
+                        }
 
-            while (Date.now() < deadline) {
-                const current = await productTableFingerprint(page);
+                        return {
+                            status:
+                                'moved',
+                            recovered:
+                                attempt > 1,
+                        };
+                    }
 
-                if (current && current !== before) {
-                    if (attempt > 1) paginationStats.recoveries++;
-
-                    return {
-                        status: 'moved',
-                        recovered: attempt > 1,
-                    };
+                    lastError =
+                        new Error(
+                            'BPOM pagination did not move within 4500 ms.',
+                        );
                 }
-
-                await page.waitForTimeout(300);
+            } catch (error) {
+                lastError = error;
             }
-
-            lastError = new Error(
-                'BPOM pagination click did not change the product table.',
-            );
-        } catch (error) {
-            lastError = error;
         }
 
         crawlerLog.warning(
@@ -1337,7 +2209,11 @@ async function clickNext(
             {
                 attempt,
                 maxAttempts,
-                error: lastError?.message || String(lastError),
+                error:
+                    lastError?.message
+                    || String(
+                        lastError,
+                    ),
             },
         );
     }
@@ -1347,40 +2223,116 @@ async function clickNext(
     return {
         status: 'failed',
         recovered: false,
-        error: lastError?.message || String(lastError || ''),
+        error:
+            lastError?.message
+            || String(
+                lastError || '',
+            ),
     };
 }
 
 await Actor.main(async () => {
-    const runStartedAt = isoNow();
-    const input = await Actor.getInput() ?? {};
-    const jobs = buildJobs(input);
-    const watchSignature = buildWatchSignature(jobs);
+    const runStartedAt =
+        isoNow();
 
-    const maxItemsPerQuery = Number(input.maxItemsPerQuery ?? 0);
-    const maxPagesPerQuery = Number(input.maxPagesPerQuery ?? 100);
-    const baselineWarmupRuns = Number(input.baselineWarmupRuns ?? 3);
-    const newProductWindowDays = Number(input.newProductWindowDays ?? 30);
-    const detailMaxAgeDays = Number(input.detailMaxAgeDays ?? 30);
-    const detailFetchLimitPerRun = Number(
-        input.detailFetchLimitPerRun ?? 0,
-    );
-    const requestDelayMs = Number(input.requestDelayMs ?? 800);
+    const input =
+        await Actor.getInput()
+        ?? {};
 
-    if (!Number.isInteger(baselineWarmupRuns) || baselineWarmupRuns < 1) {
-        throw new Error('baselineWarmupRuns must be an integer >= 1.');
-    }
+    const jobs =
+        buildJobs(input);
 
-    if (!Number.isInteger(newProductWindowDays) || newProductWindowDays < 1) {
-        throw new Error('newProductWindowDays must be an integer >= 1.');
-    }
+    const watchSignature =
+        buildWatchSignature(
+            jobs,
+        );
 
-    if (!Number.isInteger(detailMaxAgeDays) || detailMaxAgeDays < 1) {
-        throw new Error('detailMaxAgeDays must be an integer >= 1.');
+    const maxItemsPerQuery =
+        Number(
+            input
+                .maxItemsPerQuery
+            ?? 0,
+        );
+
+    const maxPagesPerQuery =
+        Number(
+            input
+                .maxPagesPerQuery
+            ?? 100,
+        );
+
+    const baselineWarmupRuns =
+        Number(
+            input
+                .baselineWarmupRuns
+            ?? 3,
+        );
+
+    const newProductWindowDays =
+        Number(
+            input
+                .newProductWindowDays
+            ?? 30,
+        );
+
+    const detailMaxAgeDays =
+        Number(
+            input
+                .detailMaxAgeDays
+            ?? 30,
+        );
+
+    const detailFetchLimitPerRun =
+        Number(
+            input
+                .detailFetchLimitPerRun
+            ?? 0,
+        );
+
+    const requestDelayMs =
+        Number(
+            input
+                .requestDelayMs
+            ?? 800,
+        );
+
+    if (
+        !Number.isInteger(
+            baselineWarmupRuns,
+        )
+        || baselineWarmupRuns < 1
+    ) {
+        throw new Error(
+            'baselineWarmupRuns must be an integer >= 1.',
+        );
     }
 
     if (
-        !Number.isInteger(detailFetchLimitPerRun)
+        !Number.isInteger(
+            newProductWindowDays,
+        )
+        || newProductWindowDays < 1
+    ) {
+        throw new Error(
+            'newProductWindowDays must be an integer >= 1.',
+        );
+    }
+
+    if (
+        !Number.isInteger(
+            detailMaxAgeDays,
+        )
+        || detailMaxAgeDays < 1
+    ) {
+        throw new Error(
+            'detailMaxAgeDays must be an integer >= 1.',
+        );
+    }
+
+    if (
+        !Number.isInteger(
+            detailFetchLimitPerRun,
+        )
         || detailFetchLimitPerRun < 0
     ) {
         throw new Error(
@@ -1388,76 +2340,141 @@ await Actor.main(async () => {
         );
     }
 
-    const detailStrategy = clean(input.detailStrategy || 'changesOnly');
-    const allowedDetailStrategies = new Set([
-        'always',
-        'changesOnly',
-        'staleOnly',
-        'never',
-    ]);
+    const detailStrategy =
+        clean(
+            input.detailStrategy
+            || 'changesOnly',
+        );
 
-    if (!allowedDetailStrategies.has(detailStrategy)) {
-        throw new Error(`Invalid detailStrategy: ${detailStrategy}`);
+    const allowedDetailStrategies =
+        new Set([
+            'always',
+            'changesOnly',
+            'staleOnly',
+            'never',
+        ]);
+
+    if (
+        !allowedDetailStrategies
+            .has(detailStrategy)
+    ) {
+        throw new Error(
+            `Invalid detailStrategy: ${detailStrategy}`,
+        );
     }
 
-    const detectChanges = input.detectChanges !== false;
-    const emit = input.emit ?? 'changes';
-    const allowPartialSnapshotUpdate = Boolean(
-        input.allowPartialSnapshotUpdate,
-    );
-    const debug = Boolean(input.debug);
-    const itemLimit = maxItemsPerQuery > 0
-        ? maxItemsPerQuery
-        : Infinity;
+    const detectChanges =
+        input.detectChanges
+        !== false;
 
-    if (debug) log.setLevel(log.LEVELS.DEBUG);
+    const emit =
+        input.emit
+        ?? 'changes';
 
-    const stateStoreName = clean(
-        input.stateStoreName
-        || 'indonesian-cosmetics-intelligence-state',
-    );
+    const allowPartialSnapshotUpdate =
+        Boolean(
+            input
+                .allowPartialSnapshotUpdate,
+        );
 
-    const stateKey = clean(input.stateKey || 'default')
-        .replace(/[^a-zA-Z0-9._-]/g, '_');
+    const debug =
+        Boolean(input.debug);
 
-    const stateStore = await Actor.openKeyValueStore(stateStoreName);
-    const rawPreviousState = detectChanges
-        ? await stateStore.getValue(`SNAPSHOT_${stateKey}`)
-        : null;
+    const itemLimit =
+        maxItemsPerQuery > 0
+            ? maxItemsPerQuery
+            : Infinity;
 
-    const watchlistMatchesPreviousState = Boolean(
+    if (debug) {
+        log.setLevel(
+            log.LEVELS.DEBUG,
+        );
+    }
+
+    const stateStoreName =
+        clean(
+            input.stateStoreName
+            || 'indonesian-cosmetics-intelligence-state',
+        );
+
+    const stateKey =
+        clean(
+            input.stateKey
+            || 'default',
+        )
+            .replace(
+                /[^a-zA-Z0-9._-]/g,
+                '_',
+            );
+
+    const stateStore =
+        await Actor
+            .openKeyValueStore(
+                stateStoreName,
+            );
+
+    const rawPreviousState =
         detectChanges
-        && rawPreviousState?.watchSignature
-        && rawPreviousState.watchSignature === watchSignature,
+            ? await stateStore
+                .getValue(
+                    `SNAPSHOT_${stateKey}`,
+                )
+            : null;
+
+    const watchlistMatchesPreviousState =
+        Boolean(
+            detectChanges
+            && rawPreviousState
+                ?.watchSignature
+            && rawPreviousState
+                .watchSignature
+                === watchSignature,
+        );
+
+    const previousRecordsForDetail =
+        watchlistMatchesPreviousState
+            ? rawPreviousState
+                .records
+                ?? {}
+            : {};
+
+    const previousStateUpdatedAtForDetail =
+        watchlistMatchesPreviousState
+            ? clean(
+                rawPreviousState
+                    ?.updatedAt,
+            )
+            : '';
+
+    log.info(
+        'Actor input loaded.',
+        {
+            version:
+                ACTOR_VERSION,
+            jobs:
+                jobs.length,
+            detailStrategy,
+            detectChanges,
+            emit,
+            maxItemsPerQuery,
+            maxPagesPerQuery,
+            baselineWarmupRuns,
+            newProductWindowDays,
+            detailMaxAgeDays,
+            detailFetchLimitPerRun,
+            allowPartialSnapshotUpdate,
+            debug,
+        },
     );
 
-    const previousRecordsForDetail = watchlistMatchesPreviousState
-        ? rawPreviousState.records ?? {}
-        : {};
+    const collected =
+        new Map();
 
-    const previousStateUpdatedAtForDetail = watchlistMatchesPreviousState
-        ? clean(rawPreviousState?.updatedAt)
-        : '';
-
-    log.info('Actor input loaded.', {
-        version: ACTOR_VERSION,
-        jobs: jobs.length,
-        detailStrategy,
-        detectChanges,
-        emit,
-        maxItemsPerQuery,
-        maxPagesPerQuery,
-        baselineWarmupRuns,
-        newProductWindowDays,
-        detailMaxAgeDays,
-        detailFetchLimitPerRun,
-        allowPartialSnapshotUpdate,
-        debug,
-    });
-
-    const collected = new Map();
     const failedJobs = [];
-    const querySummaries = new Map();
+
+    const querySummaries =
+        new Map();
+
     const detailStats = {
         requested: 0,
         skipped: 0,
@@ -1467,289 +2484,529 @@ await Actor.main(async () => {
         budgetSkipped: 0,
         byReason: {},
     };
-    const detailDecisionRegistrationNumbers = new Set();
 
-    const crawler = new PlaywrightCrawler({
-        maxConcurrency: 1,
-        requestHandlerTimeoutSecs: 1800,
-        navigationTimeoutSecs: 90,
-        maxRequestRetries: 5,
-        launchContext: {
-            launchOptions: { headless: true },
-        },
-        preNavigationHooks: [
-            async (
-                { page, request, log: crawlerLog },
-                gotoOptions,
-            ) => {
-                const retry = request.retryCount ?? 0;
+    const detailDecisionRegistrationNumbers =
+        new Set();
 
-                if (retry > 0) {
-                    const delayMs = Math.min(
-                        15000,
-                        2000 * (2 ** (retry - 1)),
-                    );
+    const crawler =
+        new PlaywrightCrawler({
+            maxConcurrency: 1,
+            requestHandlerTimeoutSecs:
+                1800,
+            navigationTimeoutSecs:
+                90,
+            maxRequestRetries: 5,
 
-                    crawlerLog.warning(
-                        `Retrying BPOM after ${delayMs} ms backoff.`,
-                        { retryCount: retry },
-                    );
-
-                    await page.waitForTimeout(delayMs);
-                }
-
-                await page.setExtraHTTPHeaders({
-                    'Accept-Language':
-                        'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-                    Accept:
-                        'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                    'Upgrade-Insecure-Requests': '1',
-                });
-
-                gotoOptions.waitUntil = 'domcontentloaded';
-                gotoOptions.timeout = 90000;
+            launchContext: {
+                launchOptions: {
+                    headless: true,
+                },
             },
-        ],
-        async requestHandler({
-            page,
-            request,
-            log: crawlerLog,
-        }) {
-            const job = request.userData.job;
 
-            crawlerLog.info(
-                `Querying BPOM: ${job.kind}=${job.value}`,
-            );
+            preNavigationHooks: [
+                async (
+                    {
+                        page,
+                        request,
+                        log:
+                            crawlerLog,
+                    },
+                    gotoOptions,
+                ) => {
+                    const retry =
+                        request
+                            .retryCount
+                        ?? 0;
 
-            await waitForTable(page);
-            await applyFilter(page, job, requestDelayMs, crawlerLog);
-            await waitForTable(page);
+                    if (retry > 0) {
+                        const delayMs =
+                            Math.min(
+                                15000,
+                                2000
+                                * (
+                                    2
+                                    ** (
+                                        retry
+                                        - 1
+                                    )
+                                ),
+                            );
 
-            let pageNumber = 1;
-            let queryCount = 0;
-            let duplicateRows = 0;
-            let stopReason = 'unknown';
-            let coverageComplete = false;
+                        crawlerLog.warning(
+                            `Retrying BPOM after ${delayMs} ms backoff.`,
+                            {
+                                retryCount:
+                                    retry,
+                            },
+                        );
 
-            const seenRegistrationNumbers = new Set();
-            const duplicateRegistrationNumbers = new Set();
-            const paginationStats = {
-                localRetries: 0,
-                recoveries: 0,
-                failures: 0,
-                uiCleanups: 0,
-            };
+                        await page
+                            .waitForTimeout(
+                                delayMs,
+                            );
+                    }
 
-            while (
-                pageNumber <= maxPagesPerQuery
-                && queryCount < itemLimit
-            ) {
-                const maxRemaining = Number.isFinite(itemLimit)
-                    ? itemLimit - queryCount
-                    : Number.MAX_SAFE_INTEGER;
+                    await page
+                        .setExtraHTTPHeaders({
+                            'Accept-Language':
+                                'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+                            Accept:
+                                'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                            'Upgrade-Insecure-Requests':
+                                '1',
+                        });
 
-                const items = await extractCurrentPage(
+                    gotoOptions
+                        .waitUntil =
+                            'domcontentloaded';
+
+                    gotoOptions
+                        .timeout =
+                            90000;
+                },
+            ],
+
+            async requestHandler({
+                page,
+                request,
+                log: crawlerLog,
+            }) {
+                const job =
+                    request
+                        .userData
+                        .job;
+
+                crawlerLog.info(
+                    `Querying BPOM: ${job.kind}=${job.value}`,
+                );
+
+                await waitForTable(
+                    page,
+                );
+
+                await applyFilter(
                     page,
                     job,
-                    {
-                        detailStrategy,
-                        detailMaxAgeDays,
-                        detailFetchLimitPerRun,
-                        detectChanges,
-                        previousRecords: previousRecordsForDetail,
-                        previousStateUpdatedAt:
-                            previousStateUpdatedAtForDetail,
-                        runStartedAt,
-                        maxRemaining,
-                        requestDelayMs,
-                        detailStats,
-                        detailDecisionRegistrationNumbers,
-                    },
-                    crawlerLog,
-                );
-
-                for (const item of items) {
-                    queryCount++;
-                    const key = item.registrationNumber;
-
-                    if (seenRegistrationNumbers.has(key)) {
-                        duplicateRows++;
-                        duplicateRegistrationNumbers.add(key);
-                    } else {
-                        seenRegistrationNumbers.add(key);
-                    }
-
-                    const existing = collected.get(key);
-
-                    if (!existing) {
-                        collected.set(key, item);
-                    } else {
-                        const matches = Array.isArray(existing.matches)
-                            ? existing.matches
-                            : [existing.matchedBy].filter(Boolean);
-
-                        if (!matches.some(
-                            (match) =>
-                                match.type === item.matchedBy.type
-                                && match.value === item.matchedBy.value,
-                        )) {
-                            matches.push(item.matchedBy);
-                        }
-
-                        collected.set(key, {
-                            ...existing,
-                            matches,
-                        });
-                    }
-
-                    if (queryCount >= itemLimit) break;
-                }
-
-                if (queryCount >= itemLimit) {
-                    stopReason = 'item_limit';
-                    break;
-                }
-
-                if (pageNumber >= maxPagesPerQuery) {
-                    stopReason = 'page_limit';
-                    break;
-                }
-
-                const paginationResult = await clickNext(
-                    page,
                     requestDelayMs,
                     crawlerLog,
-                    paginationStats,
                 );
 
-                if (paginationResult.status === 'end') {
-                    coverageComplete = true;
-                    stopReason = 'end_of_results';
-                    break;
+                await waitForTable(
+                    page,
+                );
+
+                let pageNumber = 1;
+                let queryCount = 0;
+                let duplicateRows = 0;
+                let stopReason =
+                    'unknown';
+                let coverageComplete =
+                    false;
+
+                const seenRegistrationNumbers =
+                    new Set();
+
+                const duplicateRegistrationNumbers =
+                    new Set();
+
+                const paginationStats = {
+                    localRetries: 0,
+                    recoveries: 0,
+                    failures: 0,
+                    uiCleanups: 0,
+                };
+
+                while (
+                    pageNumber
+                        <= maxPagesPerQuery
+                    && queryCount
+                        < itemLimit
+                ) {
+                    const maxRemaining =
+                        Number
+                            .isFinite(
+                                itemLimit,
+                            )
+                            ? itemLimit
+                                - queryCount
+                            : Number
+                                .MAX_SAFE_INTEGER;
+
+                    const items =
+                        await extractCurrentPage(
+                            page,
+                            job,
+                            {
+                                detailStrategy,
+                                detailMaxAgeDays,
+                                detailFetchLimitPerRun,
+                                detectChanges,
+                                previousRecords:
+                                    previousRecordsForDetail,
+                                previousStateUpdatedAt:
+                                    previousStateUpdatedAtForDetail,
+                                runStartedAt,
+                                maxRemaining,
+                                requestDelayMs,
+                                detailStats,
+                                detailDecisionRegistrationNumbers,
+                            },
+                            crawlerLog,
+                        );
+
+                    for (
+                        const item
+                        of items
+                    ) {
+                        queryCount++;
+
+                        const key =
+                            item
+                                .registrationNumber;
+
+                        if (
+                            seenRegistrationNumbers
+                                .has(key)
+                        ) {
+                            duplicateRows++;
+
+                            duplicateRegistrationNumbers
+                                .add(key);
+                        } else {
+                            seenRegistrationNumbers
+                                .add(key);
+                        }
+
+                        const existing =
+                            collected
+                                .get(key);
+
+                        if (!existing) {
+                            collected
+                                .set(
+                                    key,
+                                    item,
+                                );
+                        } else {
+                            const matches =
+                                Array
+                                    .isArray(
+                                        existing
+                                            .matches,
+                                    )
+                                    ? existing
+                                        .matches
+                                    : [
+                                        existing
+                                            .matchedBy,
+                                    ]
+                                        .filter(
+                                            Boolean,
+                                        );
+
+                            if (
+                                !matches
+                                    .some(
+                                        (
+                                            match,
+                                        ) =>
+                                            match
+                                                .type
+                                                === item
+                                                    .matchedBy
+                                                    .type
+                                            && match
+                                                .value
+                                                === item
+                                                    .matchedBy
+                                                    .value,
+                                    )
+                            ) {
+                                matches
+                                    .push(
+                                        item
+                                            .matchedBy,
+                                    );
+                            }
+
+                            collected
+                                .set(
+                                    key,
+                                    {
+                                        ...existing,
+                                        matches,
+                                    },
+                                );
+                        }
+
+                        if (
+                            queryCount
+                                >= itemLimit
+                        ) {
+                            break;
+                        }
+                    }
+
+                    if (
+                        queryCount
+                            >= itemLimit
+                    ) {
+                        stopReason =
+                            'item_limit';
+
+                        break;
+                    }
+
+                    if (
+                        pageNumber
+                            >= maxPagesPerQuery
+                    ) {
+                        stopReason =
+                            'page_limit';
+
+                        break;
+                    }
+
+                    const paginationResult =
+                        await clickNext(
+                            page,
+                            requestDelayMs,
+                            crawlerLog,
+                            paginationStats,
+                        );
+
+                    if (
+                        paginationResult
+                            .status
+                            === 'end'
+                    ) {
+                        coverageComplete =
+                            true;
+
+                        stopReason =
+                            'end_of_results';
+
+                        break;
+                    }
+
+                    if (
+                        paginationResult
+                            .status
+                            === 'failed'
+                    ) {
+                        coverageComplete =
+                            false;
+
+                        stopReason =
+                            'pagination_failure';
+
+                        crawlerLog.warning(
+                            'Stopping this BPOM query without whole-query retry because local pagination recovery was exhausted.',
+                            {
+                                queryId:
+                                    request
+                                        .uniqueKey,
+                                pageNumber,
+                                error:
+                                    paginationResult
+                                        .error,
+                            },
+                        );
+
+                        break;
+                    }
+
+                    pageNumber++;
                 }
 
-                if (paginationResult.status === 'failed') {
-                    coverageComplete = false;
-                    stopReason = 'pagination_failure';
+                const querySummary = {
+                    queryId:
+                        request
+                            .uniqueKey,
+                    kind:
+                        job.kind,
+                    value:
+                        job.value,
+                    rawRowsCollected:
+                        queryCount,
+                    uniqueProducts:
+                        seenRegistrationNumbers
+                            .size,
+                    duplicateRows,
+                    duplicateRegistrationNumberCount:
+                        duplicateRegistrationNumbers
+                            .size,
+                    duplicateRegistrationNumbers:
+                        [
+                            ...duplicateRegistrationNumbers,
+                        ].slice(
+                            0,
+                            100,
+                        ),
+                    pagesVisited:
+                        pageNumber,
+                    coverageComplete,
+                    stopReason,
+                    paginationLocalRetries:
+                        paginationStats
+                            .localRetries,
+                    paginationRecoveries:
+                        paginationStats
+                            .recoveries,
+                    paginationFailures:
+                        paginationStats
+                            .failures,
+                    paginationUiCleanups:
+                        paginationStats
+                            .uiCleanups,
+                };
 
-                    crawlerLog.warning(
-                        'Stopping this BPOM query without whole-query retry because local pagination recovery was exhausted.',
+                querySummaries
+                    .set(
+                        request
+                            .uniqueKey,
+                        querySummary,
+                    );
+
+                crawlerLog.info(
+                    `Collected ${queryCount} raw row(s) / ${seenRegistrationNumbers.size} unique product(s) for ${job.kind}=${job.value}.`,
+                    querySummary,
+                );
+            },
+
+            async failedRequestHandler(
+                {
+                    request,
+                    log: crawlerLog,
+                },
+                error,
+            ) {
+                const job =
+                    request
+                        .userData
+                        .job;
+
+                failedJobs.push({
+                    job,
+                    error:
+                        error?.message
+                        || String(error),
+                });
+
+                querySummaries
+                    .set(
+                        request
+                            .uniqueKey,
                         {
-                            queryId: request.uniqueKey,
-                            pageNumber,
-                            error: paginationResult.error,
+                            queryId:
+                                request
+                                    .uniqueKey,
+                            kind:
+                                job.kind,
+                            value:
+                                job.value,
+                            rawRowsCollected:
+                                0,
+                            uniqueProducts:
+                                0,
+                            duplicateRows:
+                                0,
+                            duplicateRegistrationNumberCount:
+                                0,
+                            duplicateRegistrationNumbers:
+                                [],
+                            pagesVisited:
+                                0,
+                            coverageComplete:
+                                false,
+                            stopReason:
+                                'request_failed',
                         },
                     );
 
-                    break;
-                }
-
-                pageNumber++;
-            }
-
-            const querySummary = {
-                queryId: request.uniqueKey,
-                kind: job.kind,
-                value: job.value,
-                rawRowsCollected: queryCount,
-                uniqueProducts: seenRegistrationNumbers.size,
-                duplicateRows,
-                duplicateRegistrationNumberCount:
-                    duplicateRegistrationNumbers.size,
-                duplicateRegistrationNumbers: [
-                    ...duplicateRegistrationNumbers,
-                ].slice(0, 100),
-                pagesVisited: pageNumber,
-                coverageComplete,
-                stopReason,
-                paginationLocalRetries: paginationStats.localRetries,
-                paginationRecoveries: paginationStats.recoveries,
-                paginationFailures: paginationStats.failures,
-                paginationUiCleanups: paginationStats.uiCleanups,
-            };
-
-            querySummaries.set(request.uniqueKey, querySummary);
-
-            crawlerLog.info(
-                `Collected ${queryCount} raw row(s) / ${seenRegistrationNumbers.size} unique product(s) for ${job.kind}=${job.value}.`,
-                querySummary,
-            );
-        },
-        async failedRequestHandler(
-            { request, log: crawlerLog },
-            error,
-        ) {
-            const job = request.userData.job;
-
-            failedJobs.push({
-                job,
-                error: error?.message || String(error),
-            });
-
-            querySummaries.set(request.uniqueKey, {
-                queryId: request.uniqueKey,
-                kind: job.kind,
-                value: job.value,
-                rawRowsCollected: 0,
-                uniqueProducts: 0,
-                duplicateRows: 0,
-                duplicateRegistrationNumberCount: 0,
-                duplicateRegistrationNumbers: [],
-                pagesVisited: 0,
-                coverageComplete: false,
-                stopReason: 'request_failed',
-            });
-
-            crawlerLog.error(
-                `Query failed: ${job.kind}=${job.value}`,
-                { error: error?.message },
-            );
-        },
-    });
+                crawlerLog.error(
+                    `Query failed: ${job.kind}=${job.value}`,
+                    {
+                        error:
+                            error
+                                ?.message,
+                    },
+                );
+            },
+        });
 
     await crawler.run(
-        jobs.map((job) => ({
-            url: BASE_URL,
-            uniqueKey: `${job.kind}:${job.value}`,
-            userData: { job },
-        })),
+        jobs.map(
+            (job) => ({
+                url:
+                    BASE_URL,
+                uniqueKey:
+                    `${job.kind}:${job.value}`,
+                userData: {
+                    job,
+                },
+            }),
+        ),
     );
 
-    const querySummaryList = jobs.map(
-        (job) => querySummaries.get(`${job.kind}:${job.value}`),
-    );
+    const querySummaryList =
+        jobs.map(
+            (job) =>
+                querySummaries
+                    .get(
+                        `${job.kind}:${job.value}`,
+                    ),
+        );
 
     const overallCoverageComplete =
         failedJobs.length === 0
-        && querySummaryList.every(
-            (query) => query?.coverageComplete === true,
-        );
+        && querySummaryList
+            .every(
+                (query) =>
+                    query
+                        ?.coverageComplete
+                    === true,
+            );
 
-    const incompleteQueries = querySummaryList.filter(
-        (query) => query?.coverageComplete !== true,
-    ).length;
+    const incompleteQueries =
+        querySummaryList
+            .filter(
+                (query) =>
+                    query
+                        ?.coverageComplete
+                    !== true,
+            )
+            .length;
 
     let baselineReset = false;
     let baselineResetReason = '';
 
-    let previousState = rawPreviousState ?? {
-        version: SNAPSHOT_VERSION,
-        watchSignature,
-        successfulRuns: 0,
-        baselineReady: false,
-        records: {},
-    };
+    let previousState =
+        rawPreviousState
+        ?? {
+            version:
+                SNAPSHOT_VERSION,
+            watchSignature,
+            successfulRuns: 0,
+            baselineReady: false,
+            records: {},
+        };
 
     if (
         detectChanges
-        && rawPreviousState?.watchSignature
-        && rawPreviousState.watchSignature !== watchSignature
+        && rawPreviousState
+            ?.watchSignature
+        && rawPreviousState
+            .watchSignature
+            !== watchSignature
     ) {
         baselineReset = true;
-        baselineResetReason = 'WATCHLIST_CHANGED';
+        baselineResetReason =
+            'WATCHLIST_CHANGED';
 
         previousState = {
-            version: SNAPSHOT_VERSION,
+            version:
+                SNAPSHOT_VERSION,
             watchSignature,
             successfulRuns: 0,
             baselineReady: false,
@@ -1758,42 +3015,84 @@ await Actor.main(async () => {
 
         log.warning(
             'Watchlist changed for this stateKey; starting a fresh trusted baseline.',
-            { stateKey },
+            {
+                stateKey,
+            },
         );
     }
 
-    const previousRecords = previousState.records ?? {};
-    const successfulRunsBefore = Number(
-        previousState.successfulRuns
-        ?? previousState.runCount
-        ?? 0,
-    );
+    const previousRecords =
+        previousState
+            .records
+        ?? {};
 
-    const baselineReadyBeforeRun = Boolean(
-        previousState.baselineReady === true
-        || successfulRunsBefore >= baselineWarmupRuns,
-    );
+    const successfulRunsBefore =
+        Number(
+            previousState
+                .successfulRuns
+            ?? previousState
+                .runCount
+            ?? 0,
+        );
 
-    let baselineStartedAtBefore = clean(previousState.baselineStartedAt);
+    const baselineReadyBeforeRun =
+        Boolean(
+            previousState
+                .baselineReady
+            === true
+            || successfulRunsBefore
+                >= baselineWarmupRuns,
+        );
 
-    if (!baselineStartedAtBefore && successfulRunsBefore > 0) {
+    let baselineStartedAtBefore =
+        clean(
+            previousState
+                .baselineStartedAt,
+        );
+
+    if (
+        !baselineStartedAtBefore
+        && successfulRunsBefore > 0
+    ) {
         baselineStartedAtBefore =
-            earliestFirstSeenAt(previousRecords)
-            || clean(previousState.updatedAt);
+            earliestFirstSeenAt(
+                previousRecords,
+            )
+            || clean(
+                previousState
+                    .updatedAt,
+            );
     }
 
-    let baselineReadyAtBefore = clean(previousState.baselineReadyAt);
-    let legacyBaselineBoundaryApplied = false;
+    let baselineReadyAtBefore =
+        clean(
+            previousState
+                .baselineReadyAt,
+        );
 
-    if (baselineReadyBeforeRun && !baselineReadyAtBefore) {
-        baselineReadyAtBefore = clean(previousState.updatedAt) || runStartedAt;
-        legacyBaselineBoundaryApplied = true;
+    let legacyBaselineBoundaryApplied =
+        false;
+
+    if (
+        baselineReadyBeforeRun
+        && !baselineReadyAtBefore
+    ) {
+        baselineReadyAtBefore =
+            clean(
+                previousState
+                    .updatedAt,
+            )
+            || runStartedAt;
+
+        legacyBaselineBoundaryApplied =
+            true;
 
         log.warning(
             'Existing trusted baseline has no baselineReadyAt timestamp. Using the previous snapshot updatedAt as a conservative migration boundary.',
             {
                 stateKey,
-                baselineReadyAt: baselineReadyAtBefore,
+                baselineReadyAt:
+                    baselineReadyAtBefore,
             },
         );
     }
@@ -1816,87 +3115,174 @@ await Actor.main(async () => {
     const changedCandidates = [];
     const enrichedCandidates = [];
 
-    for (const internalRecord of collected.values()) {
+    for (
+        const internalRecord
+        of collected.values()
+    ) {
         const currentBasicHash =
-            internalRecord.__basicHash
-            || basicHash(internalRecord);
+            internalRecord
+                .__basicHash
+            || basicHash(
+                internalRecord,
+            );
+
         const currentDetailHash =
-            internalRecord.__detailHash
-            || detailHash(internalRecord);
-        const currentDetailKnown = Boolean(
-            internalRecord.__detailKnown,
-        );
-        const currentKnownDetailFields = new Set(
-            Array.isArray(internalRecord.__detailKnownFields)
-                ? internalRecord.__detailKnownFields
-                : DETAIL_FIELDS.filter(
-                    (field) => clean(internalRecord[field]) !== '',
-                ),
-        );
-        const detailFetchedThisRun = Boolean(
-            internalRecord.__detailFetched,
-        );
+            internalRecord
+                .__detailHash
+            || detailHash(
+                internalRecord,
+            );
 
-        const record = { ...internalRecord };
-        delete record.__basicHash;
-        delete record.__detailHash;
-        delete record.__detailKnown;
-        delete record.__detailKnownFields;
-        delete record.__detailFetched;
+        const currentDetailKnown =
+            Boolean(
+                internalRecord
+                    .__detailKnown,
+            );
 
-        record.registrant = sanitizeRegistrant(record.registrant);
-        record.cosmeticsManufacturer = sanitizeCosmeticsManufacturer(
-            record.cosmeticsManufacturer,
-        );
+        const currentKnownDetailFields =
+            new Set(
+                Array.isArray(
+                    internalRecord
+                        .__detailKnownFields,
+                )
+                    ? internalRecord
+                        .__detailKnownFields
+                    : DETAIL_FIELDS
+                        .filter(
+                            (field) =>
+                                clean(
+                                    internalRecord[
+                                        field
+                                    ],
+                                )
+                                !== '',
+                        ),
+            );
 
-        const id = record.registrationNumber;
-        const previousEntry = previousRecords[id];
-        const previousRecord = previousEntry?.record
-            ? canonicalizeLegacyRecord(previousEntry.record)
-            : null;
+        const detailFetchedThisRun =
+            Boolean(
+                internalRecord
+                    .__detailFetched,
+            );
 
-        const previousWasDetailKnown = previousDetailKnown(previousEntry);
-        const previousKnownDetailFieldsSet = previousKnownDetailFields(
-            previousEntry,
-        );
+        const record = {
+            ...internalRecord,
+        };
+
+        delete record
+            .__basicHash;
+
+        delete record
+            .__detailHash;
+
+        delete record
+            .__detailKnown;
+
+        delete record
+            .__detailKnownFields;
+
+        delete record
+            .__detailFetched;
+
+        record.registrant =
+            sanitizeRegistrant(
+                record.registrant,
+            );
+
+        record.cosmeticsManufacturer =
+            sanitizeCosmeticsManufacturer(
+                record
+                    .cosmeticsManufacturer,
+            );
+
+        const id =
+            record
+                .registrationNumber;
+
+        const previousEntry =
+            previousRecords[id];
+
+        const previousRecord =
+            previousEntry?.record
+                ? canonicalizeLegacyRecord(
+                    previousEntry
+                        .record,
+                )
+                : null;
+
+        const previousWasDetailKnown =
+            previousDetailKnown(
+                previousEntry,
+            );
+
+        const previousKnownDetailFieldsSet =
+            previousKnownDetailFields(
+                previousEntry,
+            );
+
         const previousLastDetailFetchedAt =
             resolvePreviousDetailFetchedAt(
                 previousEntry,
-                clean(previousState.updatedAt),
+                clean(
+                    previousState
+                        .updatedAt,
+                ),
             );
-        const lastDetailFetchedAt = detailFetchedThisRun
-            ? runStartedAt
-            : previousLastDetailFetchedAt;
-        const priorMisses = previousConsecutiveMisses(previousEntry);
-        const ageDays = issuedAgeDays(record.issuedDate, runStartedAt);
 
-        if (previousEntry && priorMisses > 0) reappearedCount++;
+        const lastDetailFetchedAt =
+            detailFetchedThisRun
+                ? runStartedAt
+                : previousLastDetailFetchedAt;
 
-        const listingChangedFields = previousRecord
-            ? diffListingFields(previousRecord, record)
-            : [];
+        const priorMisses =
+            previousConsecutiveMisses(
+                previousEntry,
+            );
 
-        const detailChangedFields = (
+        const ageDays =
+            issuedAgeDays(
+                record.issuedDate,
+                runStartedAt,
+            );
+
+        if (
+            previousEntry
+            && priorMisses > 0
+        ) {
+            reappearedCount++;
+        }
+
+        const listingChangedFields =
             previousRecord
-            && previousWasDetailKnown
-            && currentDetailKnown
-        )
-            ? diffKnownDetailFields(
-                previousRecord,
-                record,
-                previousKnownDetailFieldsSet,
-                currentKnownDetailFields,
-            )
-            : [];
+                ? diffListingFields(
+                    previousRecord,
+                    record,
+                )
+                : [];
 
-        const enrichedFields = previousRecord
-            ? calculateEnrichedFields(
-                previousRecord,
-                record,
-                previousKnownDetailFieldsSet,
-                currentKnownDetailFields,
+        const detailChangedFields =
+            (
+                previousRecord
+                && previousWasDetailKnown
+                && currentDetailKnown
             )
-            : [];
+                ? diffKnownDetailFields(
+                    previousRecord,
+                    record,
+                    previousKnownDetailFieldsSet,
+                    currentKnownDetailFields,
+                )
+                : [];
+
+        const enrichedFields =
+            previousRecord
+                ? calculateEnrichedFields(
+                    previousRecord,
+                    record,
+                    previousKnownDetailFieldsSet,
+                    currentKnownDetailFields,
+                )
+                : [];
 
         const actualChangedFields = [
             ...new Set([
@@ -1910,245 +3296,449 @@ await Actor.main(async () => {
         let previous;
 
         if (!detectChanges) {
-            eventType = 'SNAPSHOT';
-            classificationReason = 'CHANGE_DETECTION_DISABLED';
+            eventType =
+                'SNAPSHOT';
+
+            classificationReason =
+                'CHANGE_DETECTION_DISABLED';
+
             snapshotCount++;
-        } else if (!previousEntry) {
+        } else if (
+            !previousEntry
+        ) {
             firstSeenCount++;
 
-            if (!baselineReadyBeforeRun) {
-                eventType = 'BASELINE';
-                classificationReason = 'TRUSTED_BASELINE_WARMUP';
+            if (
+                !baselineReadyBeforeRun
+            ) {
+                eventType =
+                    'BASELINE';
+
+                classificationReason =
+                    'TRUSTED_BASELINE_WARMUP';
+
                 baselineCount++;
             } else {
-                const boundaryComparison = compareDateOnly(
-                    record.issuedDate,
-                    baselineReadyAtBefore,
-                );
+                const boundaryComparison =
+                    compareDateOnly(
+                        record
+                            .issuedDate,
+                        baselineReadyAtBefore,
+                    );
 
-                if (ageDays === null) {
-                    eventType = 'DISCOVERED';
+                if (
+                    ageDays === null
+                ) {
+                    eventType =
+                        'DISCOVERED';
+
                     classificationReason =
                         'FIRST_SEEN_WITH_UNKNOWN_ISSUED_DATE';
+
                     discoveredCount++;
-                } else if (boundaryComparison === null) {
-                    eventType = 'DISCOVERED';
+                } else if (
+                    boundaryComparison
+                    === null
+                ) {
+                    eventType =
+                        'DISCOVERED';
+
                     classificationReason =
                         'FIRST_SEEN_WITH_UNKNOWN_BASELINE_BOUNDARY';
+
                     discoveredCount++;
-                } else if (boundaryComparison < 0) {
-                    eventType = 'DISCOVERED';
+                } else if (
+                    boundaryComparison
+                    < 0
+                ) {
+                    eventType =
+                        'DISCOVERED';
+
                     classificationReason =
                         'FIRST_SEEN_BEFORE_BASELINE_BOUNDARY';
+
                     discoveredCount++;
-                } else if (ageDays < -1) {
-                    eventType = 'DISCOVERED';
+                } else if (
+                    ageDays < -1
+                ) {
+                    eventType =
+                        'DISCOVERED';
+
                     classificationReason =
                         'FIRST_SEEN_WITH_FUTURE_ISSUED_DATE';
+
                     discoveredCount++;
-                } else if (ageDays > newProductWindowDays) {
-                    eventType = 'DISCOVERED';
+                } else if (
+                    ageDays
+                    > newProductWindowDays
+                ) {
+                    eventType =
+                        'DISCOVERED';
+
                     classificationReason =
                         'FIRST_SEEN_OUTSIDE_NEW_PRODUCT_WINDOW';
+
                     discoveredCount++;
                 } else {
-                    eventType = 'NEW';
+                    eventType =
+                        'NEW';
+
                     classificationReason =
                         'FIRST_SEEN_ON_OR_AFTER_BASELINE_BOUNDARY';
+
                     newCount++;
                 }
             }
-        } else if (!baselineReadyBeforeRun) {
-            if (actualChangedFields.length > 0) {
-                eventType = 'BASELINE';
+        } else if (
+            !baselineReadyBeforeRun
+        ) {
+            if (
+                actualChangedFields
+                    .length > 0
+            ) {
+                eventType =
+                    'BASELINE';
+
                 classificationReason =
                     'BASELINE_RECORD_UPDATED_DURING_WARMUP';
+
                 baselineCount++;
-            } else if (enrichedFields.length > 0) {
-                eventType = 'UNCHANGED';
+            } else if (
+                enrichedFields
+                    .length > 0
+            ) {
+                eventType =
+                    'UNCHANGED';
+
                 classificationReason =
                     'BASELINE_RECORD_ENRICHED';
+
                 enrichedCount++;
                 unchangedCount++;
             } else {
-                eventType = 'UNCHANGED';
+                eventType =
+                    'UNCHANGED';
+
                 classificationReason =
                     'BASELINE_RECORD_REOBSERVED';
+
                 unchangedCount++;
             }
-        } else if (actualChangedFields.length > 0) {
-            eventType = 'CHANGED';
-            classificationReason = 'KNOWN_RECORD_CHANGED';
-            previous = previousRecord;
+        } else if (
+            actualChangedFields
+                .length > 0
+        ) {
+            eventType =
+                'CHANGED';
+
+            classificationReason =
+                'KNOWN_RECORD_CHANGED';
+
+            previous =
+                previousRecord;
+
             changedCount++;
-        } else if (enrichedFields.length > 0) {
-            eventType = 'UNCHANGED';
-            classificationReason = 'KNOWN_RECORD_ENRICHED';
+        } else if (
+            enrichedFields
+                .length > 0
+        ) {
+            eventType =
+                'UNCHANGED';
+
+            classificationReason =
+                'KNOWN_RECORD_ENRICHED';
+
             enrichedCount++;
             unchangedCount++;
         } else {
-            eventType = 'UNCHANGED';
-            classificationReason = 'KNOWN_RECORD_UNCHANGED';
+            eventType =
+                'UNCHANGED';
+
+            classificationReason =
+                'KNOWN_RECORD_UNCHANGED';
+
             unchangedCount++;
         }
 
-        if (eventType === 'NEW' && newCandidates.length < 100) {
+        if (
+            eventType === 'NEW'
+            && newCandidates.length
+                < 100
+        ) {
             newCandidates.push({
-                registrationNumber: id,
-                issuedDate: record.issuedDate,
-                issuedAgeDays: ageDays,
+                registrationNumber:
+                    id,
+                issuedDate:
+                    record
+                        .issuedDate,
+                issuedAgeDays:
+                    ageDays,
                 classificationReason,
             });
         }
 
         if (
-            eventType === 'DISCOVERED'
-            && discoveredCandidates.length < 100
+            eventType
+                === 'DISCOVERED'
+            && discoveredCandidates
+                .length < 100
         ) {
-            discoveredCandidates.push({
-                registrationNumber: id,
-                issuedDate: record.issuedDate,
-                issuedAgeDays: ageDays,
-                classificationReason,
-            });
+            discoveredCandidates
+                .push({
+                    registrationNumber:
+                        id,
+                    issuedDate:
+                        record
+                            .issuedDate,
+                    issuedAgeDays:
+                        ageDays,
+                    classificationReason,
+                });
         }
 
-        if (eventType === 'CHANGED' && changedCandidates.length < 100) {
-            changedCandidates.push({
-                registrationNumber: id,
-                changedFields: actualChangedFields,
-                enrichedFields,
-                classificationReason,
-            });
+        if (
+            eventType
+                === 'CHANGED'
+            && changedCandidates
+                .length < 100
+        ) {
+            changedCandidates
+                .push({
+                    registrationNumber:
+                        id,
+                    changedFields:
+                        actualChangedFields,
+                    enrichedFields,
+                    classificationReason,
+                });
         }
 
-        if (enrichedFields.length > 0 && enrichedCandidates.length < 100) {
-            enrichedCandidates.push({
-                registrationNumber: id,
-                enrichedFields,
-                classificationReason,
-            });
+        if (
+            enrichedFields.length > 0
+            && enrichedCandidates
+                .length < 100
+        ) {
+            enrichedCandidates
+                .push({
+                    registrationNumber:
+                        id,
+                    enrichedFields,
+                    classificationReason,
+                });
         }
 
         const output = {
             eventType,
             classificationReason,
-            issuedAgeDays: ageDays,
+            issuedAgeDays:
+                ageDays,
             ...record,
-            detectedAt: isoNow(),
-            changedFields: actualChangedFields,
+            detectedAt:
+                isoNow(),
+            changedFields:
+                actualChangedFields,
             enrichedFields,
-            ...(previous ? { previous } : {}),
+            ...(
+                previous
+                    ? {
+                        previous,
+                    }
+                    : {}
+            ),
         };
 
-        if (shouldEmit(emit, eventType)) {
-            await Actor.pushData(output);
+        if (
+            shouldEmit(
+                emit,
+                eventType,
+            )
+        ) {
+            await Actor
+                .pushData(
+                    output,
+                );
+
             emittedCount++;
         }
 
-        const fallbackFirstSeenAt = previousEntry
-            ? (
-                previousEntry.record?.scrapedAt
-                || previousState.updatedAt
-                || runStartedAt
-            )
-            : runStartedAt;
+        const fallbackFirstSeenAt =
+            previousEntry
+                ? (
+                    previousEntry
+                        .record
+                        ?.scrapedAt
+                    || previousState
+                        .updatedAt
+                    || runStartedAt
+                )
+                : runStartedAt;
 
         observedRecords[id] = {
-            hash: stableHash(record),
-            basicHash: currentBasicHash,
-            detailHash: currentDetailHash,
-            detailKnown: currentDetailKnown,
-            detailKnownFields: [...currentKnownDetailFields],
+            hash:
+                stableHash(
+                    record,
+                ),
+            basicHash:
+                currentBasicHash,
+            detailHash:
+                currentDetailHash,
+            detailKnown:
+                currentDetailKnown,
+            detailKnownFields: [
+                ...currentKnownDetailFields,
+            ],
             lastDetailFetchedAt,
             record,
             firstSeenAt:
-                previousEntry?.firstSeenAt
+                previousEntry
+                    ?.firstSeenAt
                 || fallbackFirstSeenAt,
-            lastSeenAt: runStartedAt,
+            lastSeenAt:
+                runStartedAt,
             observationCount:
-                previousObservationCount(previousEntry) + 1,
-            consecutiveMisses: 0,
+                previousObservationCount(
+                    previousEntry,
+                ) + 1,
+            consecutiveMisses:
+                0,
         };
     }
 
-    const previousIds = Object.keys(previousRecords);
-    const observedIds = new Set(Object.keys(observedRecords));
+    const previousIds =
+        Object.keys(
+            previousRecords,
+        );
 
-    const possiblyMissing = (
-        detectChanges
-        && !baselineReset
-        && overallCoverageComplete
-    )
-        ? previousIds.filter((id) => !observedIds.has(id))
-        : [];
+    const observedIds =
+        new Set(
+            Object.keys(
+                observedRecords,
+            ),
+        );
+
+    const possiblyMissing =
+        (
+            detectChanges
+            && !baselineReset
+            && overallCoverageComplete
+        )
+            ? previousIds
+                .filter(
+                    (id) =>
+                        !observedIds
+                            .has(id),
+                )
+            : [];
 
     const snapshotCanUpdate =
         detectChanges
-        && failedJobs.length === 0
+        && failedJobs.length
+            === 0
         && (
             overallCoverageComplete
             || allowPartialSnapshotUpdate
         );
 
-    const nextRecords = { ...observedRecords };
-    let retainedFromPreviousSnapshot = 0;
+    const nextRecords = {
+        ...observedRecords,
+    };
 
-    if (snapshotCanUpdate && !baselineReset) {
-        for (const id of previousIds) {
-            if (observedIds.has(id)) continue;
+    let retainedFromPreviousSnapshot =
+        0;
 
-            const previousEntry = previousRecords[id];
-            if (!previousEntry) continue;
+    if (
+        snapshotCanUpdate
+        && !baselineReset
+    ) {
+        for (
+            const id
+            of previousIds
+        ) {
+            if (
+                observedIds.has(id)
+            ) {
+                continue;
+            }
+
+            const previousEntry =
+                previousRecords[id];
+
+            if (!previousEntry) {
+                continue;
+            }
 
             retainedFromPreviousSnapshot++;
-            const missIncrement = overallCoverageComplete ? 1 : 0;
+
+            const missIncrement =
+                overallCoverageComplete
+                    ? 1
+                    : 0;
 
             nextRecords[id] = {
                 ...previousEntry,
                 firstSeenAt:
-                    previousEntry.firstSeenAt
-                    || previousEntry.record?.scrapedAt
-                    || previousState.updatedAt
+                    previousEntry
+                        .firstSeenAt
+                    || previousEntry
+                        .record
+                        ?.scrapedAt
+                    || previousState
+                        .updatedAt
                     || runStartedAt,
                 lastSeenAt:
-                    previousEntry.lastSeenAt
-                    || previousEntry.record?.scrapedAt
-                    || previousState.updatedAt
+                    previousEntry
+                        .lastSeenAt
+                    || previousEntry
+                        .record
+                        ?.scrapedAt
+                    || previousState
+                        .updatedAt
                     || runStartedAt,
                 observationCount:
-                    previousObservationCount(previousEntry),
+                    previousObservationCount(
+                        previousEntry,
+                    ),
                 consecutiveMisses:
-                    previousConsecutiveMisses(previousEntry)
+                    previousConsecutiveMisses(
+                        previousEntry,
+                    )
                     + missIncrement,
             };
         }
     }
 
-    const successfulRunsAfter = (
-        snapshotCanUpdate
-        && overallCoverageComplete
-    )
-        ? successfulRunsBefore + 1
-        : successfulRunsBefore;
+    const successfulRunsAfter =
+        (
+            snapshotCanUpdate
+            && overallCoverageComplete
+        )
+            ? successfulRunsBefore
+                + 1
+            : successfulRunsBefore;
 
-    const baselineReadyAfterRun = Boolean(
-        baselineReadyBeforeRun
-        || successfulRunsAfter >= baselineWarmupRuns,
-    );
+    const baselineReadyAfterRun =
+        Boolean(
+            baselineReadyBeforeRun
+            || successfulRunsAfter
+                >= baselineWarmupRuns,
+        );
 
-    let baselineStartedAtAfter = baselineStartedAtBefore;
+    let baselineStartedAtAfter =
+        baselineStartedAtBefore;
 
     if (
         !baselineStartedAtAfter
         && snapshotCanUpdate
         && overallCoverageComplete
-        && successfulRunsAfter >= 1
+        && successfulRunsAfter
+            >= 1
     ) {
-        baselineStartedAtAfter = runStartedAt;
+        baselineStartedAtAfter =
+            runStartedAt;
     }
 
-    let baselineReadyAtAfter = baselineReadyAtBefore;
+    let baselineReadyAtAfter =
+        baselineReadyAtBefore;
 
     if (
         !baselineReadyAtAfter
@@ -2157,177 +3747,354 @@ await Actor.main(async () => {
         && snapshotCanUpdate
         && overallCoverageComplete
     ) {
-        baselineReadyAtAfter = isoNow();
+        baselineReadyAtAfter =
+            isoNow();
     }
 
     if (snapshotCanUpdate) {
-        await stateStore.setValue(
-            `SNAPSHOT_${stateKey}`,
-            {
-                version: SNAPSHOT_VERSION,
-                actorVersion: ACTOR_VERSION,
-                watchSignature,
-                successfulRuns: successfulRunsAfter,
-                baselineWarmupRuns,
-                baselineStartedAt: baselineStartedAtAfter,
-                baselineReadyAt: baselineReadyAtAfter,
-                baselineReady: baselineReadyAfterRun,
-                updatedAt: isoNow(),
-                coverageComplete: overallCoverageComplete,
-                detailStrategy,
-                detailMaxAgeDays,
-                detailFetchLimitPerRun,
-                records: nextRecords,
-            },
-        );
-    } else if (detectChanges) {
+        await stateStore
+            .setValue(
+                `SNAPSHOT_${stateKey}`,
+                {
+                    version:
+                        SNAPSHOT_VERSION,
+                    actorVersion:
+                        ACTOR_VERSION,
+                    watchSignature,
+                    successfulRuns:
+                        successfulRunsAfter,
+                    baselineWarmupRuns,
+                    baselineStartedAt:
+                        baselineStartedAtAfter,
+                    baselineReadyAt:
+                        baselineReadyAtAfter,
+                    baselineReady:
+                        baselineReadyAfterRun,
+                    updatedAt:
+                        isoNow(),
+                    coverageComplete:
+                        overallCoverageComplete,
+                    detailStrategy,
+                    detailMaxAgeDays,
+                    detailFetchLimitPerRun,
+                    records:
+                        nextRecords,
+                },
+            );
+    } else if (
+        detectChanges
+    ) {
         log.warning(
             'Snapshot NOT updated because coverage was incomplete or a query failed.',
             {
                 overallCoverageComplete,
-                failedJobs: failedJobs.length,
+                failedJobs:
+                    failedJobs
+                        .length,
                 allowPartialSnapshotUpdate,
             },
         );
     }
 
-    const totalRawRowsCollected = querySummaryList.reduce(
-        (total, query) => total + (query?.rawRowsCollected ?? 0),
-        0,
-    );
+    const totalRawRowsCollected =
+        querySummaryList.reduce(
+            (
+                total,
+                query,
+            ) =>
+                total
+                + (
+                    query
+                        ?.rawRowsCollected
+                    ?? 0
+                ),
+            0,
+        );
 
-    const totalDuplicateRows = querySummaryList.reduce(
-        (total, query) => total + (query?.duplicateRows ?? 0),
-        0,
-    );
+    const totalDuplicateRows =
+        querySummaryList.reduce(
+            (
+                total,
+                query,
+            ) =>
+                total
+                + (
+                    query
+                        ?.duplicateRows
+                    ?? 0
+                ),
+            0,
+        );
 
-    const totalPaginationLocalRetries = querySummaryList.reduce(
-        (total, query) =>
-            total + (query?.paginationLocalRetries ?? 0),
-        0,
-    );
+    const totalPaginationLocalRetries =
+        querySummaryList.reduce(
+            (
+                total,
+                query,
+            ) =>
+                total
+                + (
+                    query
+                        ?.paginationLocalRetries
+                    ?? 0
+                ),
+            0,
+        );
 
-    const totalPaginationRecoveries = querySummaryList.reduce(
-        (total, query) =>
-            total + (query?.paginationRecoveries ?? 0),
-        0,
-    );
+    const totalPaginationRecoveries =
+        querySummaryList.reduce(
+            (
+                total,
+                query,
+            ) =>
+                total
+                + (
+                    query
+                        ?.paginationRecoveries
+                    ?? 0
+                ),
+            0,
+        );
 
-    const totalPaginationFailures = querySummaryList.reduce(
-        (total, query) =>
-            total + (query?.paginationFailures ?? 0),
-        0,
-    );
+    const totalPaginationFailures =
+        querySummaryList.reduce(
+            (
+                total,
+                query,
+            ) =>
+                total
+                + (
+                    query
+                        ?.paginationFailures
+                    ?? 0
+                ),
+            0,
+        );
 
-    const totalPaginationUiCleanups = querySummaryList.reduce(
-        (total, query) =>
-            total + (query?.paginationUiCleanups ?? 0),
-        0,
-    );
+    const totalPaginationUiCleanups =
+        querySummaryList.reduce(
+            (
+                total,
+                query,
+            ) =>
+                total
+                + (
+                    query
+                        ?.paginationUiCleanups
+                    ?? 0
+                ),
+            0,
+        );
 
-    const uniqueDuplicateRegistrationNumbers = new Set(
-        querySummaryList.flatMap(
-            (query) => query?.duplicateRegistrationNumbers ?? [],
-        ),
-    );
+    const uniqueDuplicateRegistrationNumbers =
+        new Set(
+            querySummaryList.flatMap(
+                (query) =>
+                    query
+                        ?.duplicateRegistrationNumbers
+                    ?? [],
+            ),
+        );
 
-    const missingDetails = possiblyMissing
-        .slice(0, 100)
-        .map((id) => {
-            const entry = nextRecords[id] || previousRecords[id];
+    const missingDetails =
+        possiblyMissing
+            .slice(
+                0,
+                100,
+            )
+            .map((id) => {
+                const entry =
+                    nextRecords[id]
+                    || previousRecords[id];
 
-            return {
-                registrationNumber: id,
-                consecutiveMisses: entry?.consecutiveMisses ?? 0,
-                lastSeenAt: entry?.lastSeenAt || '',
-            };
-        });
+                return {
+                    registrationNumber:
+                        id,
+                    consecutiveMisses:
+                        entry
+                            ?.consecutiveMisses
+                        ?? 0,
+                    lastSeenAt:
+                        entry
+                            ?.lastSeenAt
+                        || '',
+                };
+            });
 
-    const persistedSnapshotProducts = snapshotCanUpdate
-        ? Object.keys(nextRecords).length
-        : Object.keys(previousRecords).length;
+    const persistedSnapshotProducts =
+        snapshotCanUpdate
+            ? Object.keys(
+                nextRecords,
+            ).length
+            : Object.keys(
+                previousRecords,
+            ).length;
 
-    let baselineStatus = 'DISABLED';
+    let baselineStatus =
+        'DISABLED';
 
     if (detectChanges) {
-        if (baselineReadyBeforeRun) baselineStatus = 'READY';
-        else if (baselineReadyAfterRun) {
-            baselineStatus = 'READY_AFTER_THIS_RUN';
-        } else baselineStatus = 'WARMING_UP';
+        if (
+            baselineReadyBeforeRun
+        ) {
+            baselineStatus =
+                'READY';
+        } else if (
+            baselineReadyAfterRun
+        ) {
+            baselineStatus =
+                'READY_AFTER_THIS_RUN';
+        } else {
+            baselineStatus =
+                'WARMING_UP';
+        }
     }
 
     const summary = {
-        version: ACTOR_VERSION,
+        version:
+            ACTOR_VERSION,
+
         baseline: {
-            status: baselineStatus,
-            requiredSuccessfulRuns: baselineWarmupRuns,
+            status:
+                baselineStatus,
+            requiredSuccessfulRuns:
+                baselineWarmupRuns,
             successfulRunsBefore,
             successfulRunsAfter,
-            readyBeforeRun: baselineReadyBeforeRun,
-            readyAfterRun: baselineReadyAfterRun,
-            baselineStartedAt: baselineStartedAtAfter || '',
-            baselineReadyAt: baselineReadyAtAfter || '',
-            baselineReadyDate: isoDateOnly(baselineReadyAtAfter),
-            legacyBoundaryMigration: legacyBaselineBoundaryApplied,
+            readyBeforeRun:
+                baselineReadyBeforeRun,
+            readyAfterRun:
+                baselineReadyAfterRun,
+            baselineStartedAt:
+                baselineStartedAtAfter
+                || '',
+            baselineReadyAt:
+                baselineReadyAtAfter
+                || '',
+            baselineReadyDate:
+                isoDateOnly(
+                    baselineReadyAtAfter,
+                ),
+            legacyBoundaryMigration:
+                legacyBaselineBoundaryApplied,
             newProductWindowDays,
         },
+
         monitoringSummary: {
-            watchlistQueries: jobs.length,
-            failedQueries: failedJobs.length,
+            watchlistQueries:
+                jobs.length,
+            failedQueries:
+                failedJobs.length,
             incompleteQueries,
-            coverageComplete: overallCoverageComplete,
+            coverageComplete:
+                overallCoverageComplete,
             detailStrategy,
             detailMaxAgeDays,
             detailFetchLimitPerRun,
-            detailFetches: detailStats.requested,
-            detailFetchSucceeded: detailStats.succeeded,
-            detailFetchFailed: detailStats.failed,
-            detailLocalRetries: detailStats.localRetries,
-            detailBudgetSkips: detailStats.budgetSkipped,
-            detailFetchReasons: detailStats.byReason,
-            detailSkips: detailStats.skipped,
-            paginationLocalRetries: totalPaginationLocalRetries,
-            paginationRecoveries: totalPaginationRecoveries,
-            paginationFailures: totalPaginationFailures,
-            paginationUiCleanups: totalPaginationUiCleanups,
-            rawRowsCollected: totalRawRowsCollected,
-            observedThisRun: collected.size,
-            duplicateRows: totalDuplicateRows,
+            detailFetches:
+                detailStats.requested,
+            detailFetchSucceeded:
+                detailStats.succeeded,
+            detailFetchFailed:
+                detailStats.failed,
+            detailLocalRetries:
+                detailStats.localRetries,
+            detailBudgetSkips:
+                detailStats.budgetSkipped,
+            detailFetchReasons:
+                detailStats.byReason,
+            detailSkips:
+                detailStats.skipped,
+            paginationLocalRetries:
+                totalPaginationLocalRetries,
+            paginationRecoveries:
+                totalPaginationRecoveries,
+            paginationFailures:
+                totalPaginationFailures,
+            paginationUiCleanups:
+                totalPaginationUiCleanups,
+            rawRowsCollected:
+                totalRawRowsCollected,
+            observedThisRun:
+                collected.size,
+            duplicateRows:
+                totalDuplicateRows,
             duplicateRegistrationNumbers:
-                uniqueDuplicateRegistrationNumbers.size,
-            previousKnownProducts: Object.keys(previousRecords).length,
+                uniqueDuplicateRegistrationNumbers
+                    .size,
+            previousKnownProducts:
+                Object.keys(
+                    previousRecords,
+                ).length,
             retainedFromPreviousSnapshot,
-            snapshotProducts: persistedSnapshotProducts,
-            firstSeenProducts: firstSeenCount,
-            baselineProducts: baselineCount,
-            newProducts: newCount,
-            discoveredProducts: discoveredCount,
-            changedProducts: changedCount,
-            enrichedProducts: enrichedCount,
-            unchangedProducts: unchangedCount,
-            snapshotProductsEmitted: snapshotCount,
-            emittedRecords: emittedCount,
-            possiblyMissingProducts: possiblyMissing.length,
-            reappearedProducts: reappearedCount,
+            snapshotProducts:
+                persistedSnapshotProducts,
+            firstSeenProducts:
+                firstSeenCount,
+            baselineProducts:
+                baselineCount,
+            newProducts:
+                newCount,
+            discoveredProducts:
+                discoveredCount,
+            changedProducts:
+                changedCount,
+            enrichedProducts:
+                enrichedCount,
+            unchangedProducts:
+                unchangedCount,
+            snapshotProductsEmitted:
+                snapshotCount,
+            emittedRecords:
+                emittedCount,
+            possiblyMissingProducts:
+                possiblyMissing.length,
+            reappearedProducts:
+                reappearedCount,
         },
-        querySummaries: querySummaryList,
-        possiblyMissingRegistrationNumbers: possiblyMissing.slice(0, 100),
-        possiblyMissingDetails: missingDetails,
+
+        querySummaries:
+            querySummaryList,
+
+        possiblyMissingRegistrationNumbers:
+            possiblyMissing.slice(
+                0,
+                100,
+            ),
+
+        possiblyMissingDetails:
+            missingDetails,
+
         classificationSamples: {
-            new: newCandidates,
-            discovered: discoveredCandidates,
-            changed: changedCandidates,
-            enriched: enrichedCandidates,
+            new:
+                newCandidates,
+            discovered:
+                discoveredCandidates,
+            changed:
+                changedCandidates,
+            enriched:
+                enrichedCandidates,
         },
+
         baselineReset,
         baselineResetReason,
-        snapshotUpdated: snapshotCanUpdate,
+        snapshotUpdated:
+            snapshotCanUpdate,
         stateStoreName,
         stateKey,
         watchSignature,
-        finishedAt: isoNow(),
+        finishedAt:
+            isoNow(),
     };
 
-    await Actor.setValue('OUTPUT', summary);
-    log.info('Run finished.', summary);
+    await Actor
+        .setValue(
+            'OUTPUT',
+            summary,
+        );
+
+    log.info(
+        'Run finished.',
+        summary,
+    );
 });
