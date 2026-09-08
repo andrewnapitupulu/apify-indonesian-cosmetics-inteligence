@@ -75,19 +75,39 @@
     "detailStrategy": {
       "title": "Product detail strategy",
       "type": "string",
-      "description": "Controls when the Actor opens BPOM product detail. changesOnly is recommended for production monitoring.",
+      "description": "Controls when the Actor opens BPOM product detail. changesOnly is recommended for routine monitoring; staleOnly is recommended for periodic detail refresh.",
       "editor": "select",
       "enum": [
         "always",
         "changesOnly",
+        "staleOnly",
         "never"
       ],
       "enumTitles": [
         "Always open product details",
-        "Only for new or changed products",
+        "Only for new or listing-changed products",
+        "Only when detail is stale",
         "Never open product details"
       ],
       "default": "changesOnly"
+    },
+    "detailMaxAgeDays": {
+      "title": "Detail maximum age (days)",
+      "type": "integer",
+      "description": "Used by staleOnly. Product details are refreshed when their last successful detail fetch is at least this many days old. Recommended: 30.",
+      "minimum": 1,
+      "maximum": 365,
+      "default": 30,
+      "editor": "number"
+    },
+    "detailFetchLimitPerRun": {
+      "title": "Detail fetch limit per run",
+      "type": "integer",
+      "description": "Used by staleOnly to cap successful detail attempts requested in one run. 0 = unlimited. Use this to spread stale-detail refresh cost across multiple runs.",
+      "minimum": 0,
+      "maximum": 10000,
+      "default": 0,
+      "editor": "number"
     },
     "baselineWarmupRuns": {
       "title": "Trusted baseline warm-up runs",
