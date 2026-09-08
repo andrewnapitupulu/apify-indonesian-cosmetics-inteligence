@@ -3,8 +3,8 @@ import { Actor, log } from 'apify';
 import { PlaywrightCrawler } from 'crawlee';
 
 const BASE_URL = 'https://cekbpom.pom.go.id/produk-kosmetika';
-const SNAPSHOT_VERSION = 4;
-const ACTOR_VERSION = '0.2.3';
+const SNAPSHOT_VERSION = 5;
+const ACTOR_VERSION = '0.2.4';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -521,12 +521,15 @@ function issuedAgeDays(
     issuedDate,
     referenceIso,
 ) {
+    const value =
+        clean(
+            issuedDate,
+        );
+
     if (
         !/^\d{4}-\d{2}-\d{2}$/
             .test(
-                clean(
-                    issuedDate,
-                ),
+                value,
             )
     ) {
         return null;
@@ -534,9 +537,7 @@ function issuedAgeDays(
 
     const issuedMs =
         Date.parse(
-            `${clean(
-                issuedDate,
-            )}T00:00:00Z`,
+            `${value}T00:00:00Z`,
         );
 
     const referenceMs =
@@ -564,23 +565,93 @@ function issuedAgeDays(
     );
 }
 
-function isRecentIssuedDate(
-    issuedDate,
-    referenceIso,
-    windowDays,
+function isoDateOnly(
+    value,
 ) {
-    const ageDays =
-        issuedAgeDays(
-            issuedDate,
-            referenceIso,
+    const text =
+        clean(
+            value,
         );
 
+    const match =
+        text.match(
+            /^(\d{4}-\d{2}-\d{2})/,
+        );
+
+    return match?.[1]
+        || '';
+}
+
+function compareDateOnly(
+    left,
+    right,
+) {
+    const a =
+        isoDateOnly(
+            left,
+        );
+
+    const b =
+        isoDateOnly(
+            right,
+        );
+
+    if (
+        !a
+        || !b
+    ) {
+        return null;
+    }
+
+    if (
+        a === b
+    ) {
+        return 0;
+    }
+
     return (
-        ageDays !== null
-        && ageDays >= -1
-        && ageDays
-            <= windowDays
+        a < b
+            ? -1
+            : 1
     );
+}
+
+function earliestFirstSeenAt(
+    records = {},
+) {
+    const values =
+        Object.values(
+            records,
+        )
+            .map(
+                (entry) =>
+                    clean(
+                        entry
+                            ?.firstSeenAt
+                        || entry
+                            ?.record
+                            ?.scrapedAt,
+                    ),
+            )
+            .filter(
+                (value) =>
+                    Number.isFinite(
+                        Date.parse(
+                            value,
+                        ),
+                    ),
+            )
+            .sort(
+                (
+                    a,
+                    b,
+                ) =>
+                    Date.parse(a)
+                    - Date.parse(b),
+            );
+
+    return values[0]
+        || '';
 }
 
 function previousObservationCount(
@@ -715,7 +786,9 @@ async function getProductTable(
         }
     }
 
-    if (fallback) {
+    if (
+        fallback
+    ) {
         return fallback;
     }
 
@@ -743,7 +816,9 @@ async function waitForTable(
                         'table',
                     ),
             ].some(
-                (table) => {
+                (
+                    table,
+                ) => {
                     const headers =
                         (
                             table
@@ -833,7 +908,9 @@ async function applyFilter(
             ),
         );
 
-    if (!open) {
+    if (
+        !open
+    ) {
         throw new Error(
             'BPOM Filter button was not found.',
         );
@@ -859,7 +936,9 @@ async function applyFilter(
             )
             : null;
 
-    if (!field) {
+    if (
+        !field
+    ) {
         throw new Error(
             `BPOM filter field was not found: ${placeholder || job.kind}`,
         );
@@ -880,7 +959,9 @@ async function applyFilter(
             ),
         );
 
-    if (!apply) {
+    if (
+        !apply
+    ) {
         throw new Error(
             'BPOM apply Filter button was not found.',
         );
@@ -903,7 +984,9 @@ async function applyFilter(
                         'table',
                     ),
             ].some(
-                (table) => {
+                (
+                    table,
+                ) => {
                     const headers =
                         (
                             table
@@ -1056,7 +1139,9 @@ async function extractDetailPairs(
                     'tr',
                 )
                 .forEach(
-                    (tr) => {
+                    (
+                        tr,
+                    ) => {
                         const cells =
                             [
                                 ...tr
@@ -1105,7 +1190,9 @@ async function extractDetailPairs(
                         Boolean,
                     )
                     .filter(
-                        (line) =>
+                        (
+                            line,
+                        ) =>
                             !/^Detail Produk$/i
                                 .test(
                                     line,
@@ -1157,11 +1244,14 @@ async function extractDetailPairs(
                         ),
                     );
 
-                if (!label) {
+                if (
+                    !label
+                ) {
                     continue;
                 }
 
-                const values = [];
+                const values =
+                    [];
 
                 for (
                     let j = i + 1;
@@ -1306,7 +1396,9 @@ async function enrichFromRow(
                 page,
             );
 
-        if (!dialog) {
+        if (
+            !dialog
+        ) {
             return {};
         }
 
@@ -1366,7 +1458,9 @@ async function enrichFromRow(
                 ),
             );
 
-        if (close) {
+        if (
+            close
+        ) {
             await close
                 .click()
                 .catch(
@@ -1387,7 +1481,9 @@ async function enrichFromRow(
         );
 
         return details;
-    } catch (error) {
+    } catch (
+        error
+    ) {
         crawlerLog.warning(
             'Could not open/parse BPOM product detail.',
             {
@@ -1422,7 +1518,6 @@ async function extractCurrentPage(
         requestDelayMs,
         detailStats,
         detailDecisionRegistrationNumbers,
-        detailFetchedRegistrationNumbers,
     },
     crawlerLog,
 ) {
@@ -1436,7 +1531,8 @@ async function extractCurrentPage(
             'tbody tr',
         );
 
-    const results = [];
+    const results =
+        [];
 
     const rowCount =
         await rows.count();
@@ -1613,28 +1709,14 @@ async function extractCurrentPage(
             ) {
                 detailStats
                     .requested++;
-
-                detailFetchedRegistrationNumbers
-                    .add(
-                        list
-                            .registrationNumber,
-                    );
             } else {
                 detailStats
                     .skipped++;
             }
         }
 
-        const shouldUseThisRowForDetail =
-            shouldFetchDetail
-            && detailFetchedRegistrationNumbers
-                .has(
-                    list
-                        .registrationNumber,
-                );
-
         const detail =
-            shouldUseThisRowForDetail
+            shouldFetchDetail
                 ? await enrichFromRow(
                     page,
                     row,
@@ -1643,7 +1725,8 @@ async function extractCurrentPage(
                 )
                 : {};
 
-        const carriedDetail = {};
+        const carriedDetail =
+            {};
 
         if (
             previousRecord
@@ -1754,7 +1837,8 @@ async function extractCurrentPage(
 
             kits:
                 clean(
-                    detail.kits
+                    detail
+                        .kits
                     || carriedDetail
                         .kits,
                 ),
@@ -1793,7 +1877,8 @@ async function extractCurrentPage(
 
             status:
                 clean(
-                    detail.status
+                    detail
+                        .status
                     || carriedDetail
                         .status,
                 ),
@@ -1845,7 +1930,9 @@ async function clickNext(
             ),
         );
 
-    if (!next) {
+    if (
+        !next
+    ) {
         return false;
     }
 
@@ -1864,16 +1951,19 @@ async function clickNext(
                 'aria-disabled',
             ) === 'true';
 
-    if (disabled) {
+    if (
+        disabled
+    ) {
         return false;
     }
 
     const table =
         await getProductTable(
             page,
-        ).catch(
-            () => null,
-        );
+        )
+            .catch(
+                () => null,
+            );
 
     const before =
         table
@@ -2164,7 +2254,9 @@ await Actor.main(
                 ? maxItemsPerQuery
                 : Infinity;
 
-        if (debug) {
+        if (
+            debug
+        ) {
             log.setLevel(
                 log.LEVELS.DEBUG,
             );
@@ -2179,7 +2271,8 @@ await Actor.main(
 
         const stateKey =
             clean(
-                input.stateKey
+                input
+                    .stateKey
                 || 'default',
             )
                 .replace(
@@ -2257,14 +2350,14 @@ await Actor.main(
             new Map();
 
         const detailStats = {
-            requested: 0,
-            skipped: 0,
+            requested:
+                0,
+
+            skipped:
+                0,
         };
 
         const detailDecisionRegistrationNumbers =
-            new Set();
-
-        const detailFetchedRegistrationNumbers =
             new Set();
 
         const crawler =
@@ -2441,8 +2534,6 @@ await Actor.main(
                                     detailStats,
 
                                     detailDecisionRegistrationNumbers,
-
-                                    detailFetchedRegistrationNumbers,
                                 },
                                 crawlerLog,
                             );
@@ -2744,7 +2835,9 @@ await Actor.main(
             failedJobs.length === 0
             && querySummaryList
                 .every(
-                    (query) =>
+                    (
+                        query,
+                    ) =>
                         query
                             ?.coverageComplete
                         === true,
@@ -2766,6 +2859,9 @@ await Actor.main(
 
                 successfulRuns:
                     0,
+
+                baselineReady:
+                    false,
 
                 records:
                     {},
@@ -2794,6 +2890,9 @@ await Actor.main(
                 successfulRuns:
                     0,
 
+                baselineReady:
+                    false,
+
                 records:
                     {},
             };
@@ -2821,10 +2920,70 @@ await Actor.main(
             );
 
         const baselineReadyBeforeRun =
-            successfulRunsBefore
-            >= baselineWarmupRuns;
+            Boolean(
+                previousState
+                    .baselineReady
+                    === true
+                || successfulRunsBefore
+                    >= baselineWarmupRuns,
+            );
 
-        const observedRecords = {};
+        let baselineStartedAtBefore =
+            clean(
+                previousState
+                    .baselineStartedAt,
+            );
+
+        if (
+            !baselineStartedAtBefore
+            && successfulRunsBefore > 0
+        ) {
+            baselineStartedAtBefore =
+                earliestFirstSeenAt(
+                    previousRecords,
+                )
+                || clean(
+                    previousState
+                        .updatedAt,
+                );
+        }
+
+        let baselineReadyAtBefore =
+            clean(
+                previousState
+                    .baselineReadyAt,
+            );
+
+        let legacyBaselineBoundaryApplied =
+            false;
+
+        if (
+            baselineReadyBeforeRun
+            && !baselineReadyAtBefore
+        ) {
+            baselineReadyAtBefore =
+                clean(
+                    previousState
+                        .updatedAt,
+                )
+                || runStartedAt;
+
+            legacyBaselineBoundaryApplied =
+                true;
+
+            log.warning(
+                'Existing trusted baseline has no baselineReadyAt timestamp. Using the previous snapshot updatedAt as a conservative migration boundary.',
+                {
+                    stateKey,
+
+                    baselineReadyAt:
+                        baselineReadyAtBefore,
+                },
+            );
+        }
+
+        const observedRecords =
+            {};
 
         let baselineCount =
             0;
@@ -2852,6 +3011,15 @@ await Actor.main(
 
         let firstSeenCount =
             0;
+
+        const newCandidates =
+            [];
+
+        const discoveredCandidates =
+            [];
+
+        const changedCandidates =
+            [];
 
         for (
             const internalRecord
@@ -2936,32 +3104,195 @@ await Actor.main(
                         'TRUSTED_BASELINE_WARMUP';
 
                     baselineCount++;
-                } else if (
-                    isRecentIssuedDate(
-                        record
-                            .issuedDate,
-                        runStartedAt,
-                        newProductWindowDays,
-                    )
-                ) {
-                    eventType =
-                        'NEW';
-
-                    classificationReason =
-                        'FIRST_SEEN_WITH_RECENT_ISSUED_DATE';
-
-                    newCount++;
                 } else {
-                    eventType =
-                        'DISCOVERED';
+                    const boundaryComparison =
+                        compareDateOnly(
+                            record
+                                .issuedDate,
+                            baselineReadyAtBefore,
+                        );
 
-                    classificationReason =
-                        ageDays
+                    if (
+                        ageDays === null
+                    ) {
+                        eventType =
+                            'DISCOVERED';
+
+                        classificationReason =
+                            'FIRST_SEEN_WITH_UNKNOWN_ISSUED_DATE';
+
+                        discoveredCount++;
+
+                        if (
+                            discoveredCandidates
+                                .length
+                            < 100
+                        ) {
+                            discoveredCandidates.push({
+                                registrationNumber:
+                                    id,
+
+                                issuedDate:
+                                    record
+                                        .issuedDate,
+
+                                issuedAgeDays:
+                                    ageDays,
+
+                                classificationReason,
+                            });
+                        }
+                    } else if (
+                        boundaryComparison
                             === null
-                            ? 'FIRST_SEEN_WITH_UNKNOWN_ISSUED_DATE'
-                            : 'FIRST_SEEN_WITH_OLD_ISSUED_DATE';
+                    ) {
+                        eventType =
+                            'DISCOVERED';
 
-                    discoveredCount++;
+                        classificationReason =
+                            'FIRST_SEEN_WITH_UNKNOWN_BASELINE_BOUNDARY';
+
+                        discoveredCount++;
+
+                        if (
+                            discoveredCandidates
+                                .length
+                            < 100
+                        ) {
+                            discoveredCandidates.push({
+                                registrationNumber:
+                                    id,
+
+                                issuedDate:
+                                    record
+                                        .issuedDate,
+
+                                issuedAgeDays:
+                                    ageDays,
+
+                                classificationReason,
+                            });
+                        }
+                    } else if (
+                        boundaryComparison < 0
+                    ) {
+                        eventType =
+                            'DISCOVERED';
+
+                        classificationReason =
+                            'FIRST_SEEN_BEFORE_BASELINE_BOUNDARY';
+
+                        discoveredCount++;
+
+                        if (
+                            discoveredCandidates
+                                .length
+                            < 100
+                        ) {
+                            discoveredCandidates.push({
+                                registrationNumber:
+                                    id,
+
+                                issuedDate:
+                                    record
+                                        .issuedDate,
+
+                                issuedAgeDays:
+                                    ageDays,
+
+                                classificationReason,
+                            });
+                        }
+                    } else if (
+                        ageDays < -1
+                    ) {
+                        eventType =
+                            'DISCOVERED';
+
+                        classificationReason =
+                            'FIRST_SEEN_WITH_FUTURE_ISSUED_DATE';
+
+                        discoveredCount++;
+
+                        if (
+                            discoveredCandidates
+                                .length
+                            < 100
+                        ) {
+                            discoveredCandidates.push({
+                                registrationNumber:
+                                    id,
+
+                                issuedDate:
+                                    record
+                                        .issuedDate,
+
+                                issuedAgeDays:
+                                    ageDays,
+
+                                classificationReason,
+                            });
+                        }
+                    } else if (
+                        ageDays
+                            > newProductWindowDays
+                    ) {
+                        eventType =
+                            'DISCOVERED';
+
+                        classificationReason =
+                            'FIRST_SEEN_OUTSIDE_NEW_PRODUCT_WINDOW';
+
+                        discoveredCount++;
+
+                        if (
+                            discoveredCandidates
+                                .length
+                            < 100
+                        ) {
+                            discoveredCandidates.push({
+                                registrationNumber:
+                                    id,
+
+                                issuedDate:
+                                    record
+                                        .issuedDate,
+
+                                issuedAgeDays:
+                                    ageDays,
+
+                                classificationReason,
+                            });
+                        }
+                    } else {
+                        eventType =
+                            'NEW';
+
+                        classificationReason =
+                            'FIRST_SEEN_ON_OR_AFTER_BASELINE_BOUNDARY';
+
+                        newCount++;
+
+                        if (
+                            newCandidates
+                                .length
+                            < 100
+                        ) {
+                            newCandidates.push({
+                                registrationNumber:
+                                    id,
+
+                                issuedDate:
+                                    record
+                                        .issuedDate,
+
+                                issuedAgeDays:
+                                    ageDays,
+
+                                classificationReason,
+                            });
+                        }
+                    }
                 }
             } else if (
                 !baselineReadyBeforeRun
@@ -2969,11 +3300,6 @@ await Actor.main(
                     .hash
                     !== hash
             ) {
-                /*
-                 * Selama warm-up, perubahan record tidak
-                 * dikirim sebagai operational CHANGED.
-                 * Kita serap state terbarunya ke baseline.
-                 */
                 eventType =
                     'BASELINE';
 
@@ -3004,6 +3330,21 @@ await Actor.main(
                     );
 
                 changedCount++;
+
+                if (
+                    changedCandidates
+                        .length
+                    < 100
+                ) {
+                    changedCandidates.push({
+                        registrationNumber:
+                            id,
+
+                        changedFields,
+
+                        classificationReason,
+                    });
+                }
             } else {
                 eventType =
                     'UNCHANGED';
@@ -3162,6 +3503,11 @@ await Actor.main(
 
                 retainedFromPreviousSnapshot++;
 
+                const missIncrement =
+                    overallCoverageComplete
+                        ? 1
+                        : 0;
+
                 nextRecords[id] = {
                     ...previousEntry,
 
@@ -3193,7 +3539,8 @@ await Actor.main(
                     consecutiveMisses:
                         previousConsecutiveMisses(
                             previousEntry,
-                        ) + 1,
+                        )
+                        + missIncrement,
                 };
             }
         }
@@ -3206,8 +3553,38 @@ await Actor.main(
                 : successfulRunsBefore;
 
         const baselineReadyAfterRun =
-            successfulRunsAfter
-            >= baselineWarmupRuns;
+            Boolean(
+                baselineReadyBeforeRun
+                || successfulRunsAfter
+                    >= baselineWarmupRuns,
+            );
+
+        let baselineStartedAtAfter =
+            baselineStartedAtBefore;
+
+        if (
+            !baselineStartedAtAfter
+            && snapshotCanUpdate
+            && overallCoverageComplete
+            && successfulRunsAfter >= 1
+        ) {
+            baselineStartedAtAfter =
+                runStartedAt;
+        }
+
+        let baselineReadyAtAfter =
+            baselineReadyAtBefore;
+
+        if (
+            !baselineReadyAtAfter
+            && !baselineReadyBeforeRun
+            && baselineReadyAfterRun
+            && snapshotCanUpdate
+            && overallCoverageComplete
+        ) {
+            baselineReadyAtAfter =
+                isoNow();
+        }
 
         if (
             snapshotCanUpdate
@@ -3228,6 +3605,12 @@ await Actor.main(
                             successfulRunsAfter,
 
                         baselineWarmupRuns,
+
+                        baselineStartedAt:
+                            baselineStartedAtAfter,
+
+                        baselineReadyAt:
+                            baselineReadyAtAfter,
 
                         baselineReady:
                             baselineReadyAfterRun,
@@ -3297,7 +3680,9 @@ await Actor.main(
             new Set(
                 querySummaryList
                     .flatMap(
-                        (query) =>
+                        (
+                            query,
+                        ) =>
                             query
                                 ?.duplicateRegistrationNumbers
                             ?? [],
@@ -3311,7 +3696,9 @@ await Actor.main(
                     100,
                 )
                 .map(
-                    (id) => {
+                    (
+                        id,
+                    ) => {
                         const entry =
                             nextRecords[id]
                             || previousRecords[id];
@@ -3384,6 +3771,22 @@ await Actor.main(
 
                 readyAfterRun:
                     baselineReadyAfterRun,
+
+                baselineStartedAt:
+                    baselineStartedAtAfter
+                    || '',
+
+                baselineReadyAt:
+                    baselineReadyAtAfter
+                    || '',
+
+                baselineReadyDate:
+                    isoDateOnly(
+                        baselineReadyAtAfter,
+                    ),
+
+                legacyBoundaryMigration:
+                    legacyBaselineBoundaryApplied,
 
                 newProductWindowDays,
             },
@@ -3476,6 +3879,17 @@ await Actor.main(
 
             possiblyMissingDetails:
                 missingDetails,
+
+            classificationSamples: {
+                new:
+                    newCandidates,
+
+                discovered:
+                    discoveredCandidates,
+
+                changed:
+                    changedCandidates,
+            },
 
             baselineReset,
 
