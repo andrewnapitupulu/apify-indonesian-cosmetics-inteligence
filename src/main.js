@@ -3,9 +3,41 @@ import { Actor, log } from 'apify';
 import { PlaywrightCrawler } from 'crawlee';
 
 const BASE_URL = 'https://cekbpom.pom.go.id/produk-kosmetika';
-const SNAPSHOT_VERSION = 5;
-const ACTOR_VERSION = '0.2.4';
+const SNAPSHOT_VERSION = 6;
+const ACTOR_VERSION = '0.2.5';
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const LISTING_FIELDS = [
+    'registrationNumber',
+    'issuedDate',
+    'productName',
+    'brand',
+    'packaging',
+    'registrant',
+    'registrantLocation',
+];
+
+const LISTING_CHANGE_FIELDS = [
+    'issuedDate',
+    'productName',
+    'brand',
+    'packaging',
+    'registrant',
+    'registrantLocation',
+];
+
+const DETAIL_FIELDS = [
+    'composition',
+    'cosmeticsManufacturer',
+    'primaryPackagingManufacturer',
+    'secondaryPackagingManufacturer',
+    'kits',
+    'issuedBy',
+    'dosageForm',
+    'applicationDate',
+    'expiryDate',
+    'status',
+];
 
 const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const isoNow = () => new Date().toISOString();
@@ -18,434 +50,280 @@ function textLines(value) {
         .filter(Boolean);
 }
 
+function escapeRegex(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function stripEmbeddedLabels(value, labels) {
+    const text = clean(value);
+    if (!text) return '';
+
+    const pattern = labels
+        .map(escapeRegex)
+        .join('|');
+
+    return clean(
+        text.replace(
+            new RegExp(`\\s+(?:${pattern})\\b.*$`, 'i'),
+            '',
+        ),
+    );
+}
+
+function sanitizeRegistrant(value) {
+    return stripEmbeddedLabels(
+        value,
+        [
+            'Industri Pengemas Primer',
+            'Industri Pengemas Sekunder',
+            'Industri Kosmetika',
+            'Kits',
+            'Diterbitkan Oleh',
+        ],
+    );
+}
+
+function sanitizeCosmeticsManufacturer(value) {
+    return stripEmbeddedLabels(
+        value,
+        [
+            'Industri Pengemas Primer',
+            'Industri Pengemas Sekunder',
+            'Kits',
+            'Diterbitkan Oleh',
+        ],
+    );
+}
+
+function canonicalizeLegacyRecord(record = {}) {
+    return {
+        ...record,
+        registrant: sanitizeRegistrant(record.registrant),
+        cosmeticsManufacturer: sanitizeCosmeticsManufacturer(
+            record.cosmeticsManufacturer,
+        ),
+    };
+}
+
 function parseRegistrationCell(value) {
     const text = clean(value);
 
     return {
         registrationNumber:
             text.match(/\b[A-Z]{2,3}\d{8,}\b/i)?.[0] || '',
-
         issuedDate:
-            text.match(
-                /Terbit\s*:\s*(\d{4}-\d{2}-\d{2})/i,
-            )?.[1] || '',
+            text.match(/Terbit\s*:\s*(\d{4}-\d{2}-\d{2})/i)?.[1] || '',
     };
 }
 
 function parseProductCell(value) {
     const lines = textLines(value);
-
     let brand = '';
     let packaging = '';
-
     const productNameLines = [];
 
     for (const line of lines) {
         if (/^Merk\s*:/i.test(line)) {
-            brand =
-                clean(
-                    line.replace(
-                        /^Merk\s*:/i,
-                        '',
-                    ),
-                );
-        } else if (
-            /^Merek\s*:/i.test(
-                line,
-            )
-        ) {
-            brand =
-                clean(
-                    line.replace(
-                        /^Merek\s*:/i,
-                        '',
-                    ),
-                );
-        } else if (
-            /^Kemasan\s*:/i.test(
-                line,
-            )
-        ) {
-            packaging =
-                clean(
-                    line.replace(
-                        /^Kemasan\s*:/i,
-                        '',
-                    ),
-                );
+            brand = clean(line.replace(/^Merk\s*:/i, ''));
+        } else if (/^Merek\s*:/i.test(line)) {
+            brand = clean(line.replace(/^Merek\s*:/i, ''));
+        } else if (/^Kemasan\s*:/i.test(line)) {
+            packaging = clean(line.replace(/^Kemasan\s*:/i, ''));
         } else {
-            productNameLines.push(
-                line,
-            );
+            productNameLines.push(line);
         }
     }
 
-    const fullText =
-        clean(value);
+    const fullText = clean(value);
 
     if (!brand) {
         brand =
-            fullText.match(
-                /Merk\s*:\s*(.*?)(?=Kemasan\s*:|$)/i,
-            )?.[1]?.trim()
+            fullText.match(/Merk\s*:\s*(.*?)(?=Kemasan\s*:|$)/i)?.[1]?.trim()
             || '';
     }
 
     if (!packaging) {
         packaging =
-            fullText.match(
-                /Kemasan\s*:\s*(.*)$/i,
-            )?.[1]?.trim()
+            fullText.match(/Kemasan\s*:\s*(.*)$/i)?.[1]?.trim()
             || '';
     }
 
     return {
-        productName:
-            clean(
-                productNameLines
-                    .join(' ')
-                    .replace(
-                        /Merk\s*:.*$/i,
-                        '',
-                    )
-                    .replace(
-                        /Merek\s*:.*$/i,
-                        '',
-                    ),
-            ),
-
-        brand:
-            clean(brand),
-
-        packaging:
-            clean(packaging),
+        productName: clean(
+            productNameLines
+                .join(' ')
+                .replace(/Merk\s*:.*$/i, '')
+                .replace(/Merek\s*:.*$/i, ''),
+        ),
+        brand: clean(brand),
+        packaging: clean(packaging),
     };
 }
 
-function parseRegistrantCell(
-    value,
-) {
-    const lines =
-        textLines(value);
+function parseRegistrantCell(value) {
+    const lines = textLines(value);
 
-    if (
-        lines.length >= 2
-    ) {
+    if (lines.length >= 2) {
         return {
-            registrant:
-                clean(
-                    lines[0],
-                ),
-
-            registrantLocation:
-                clean(
-                    lines
-                        .slice(1)
-                        .join(' '),
-                ),
+            registrant: sanitizeRegistrant(lines[0]),
+            registrantLocation: clean(lines.slice(1).join(' ')),
         };
     }
 
     return {
-        registrant:
-            clean(value),
-
-        registrantLocation:
-            '',
+        registrant: sanitizeRegistrant(value),
+        registrantLocation: '',
     };
 }
 
-function stableHash(record) {
-    const fields = [
-        'registrationNumber',
-        'productName',
-        'brand',
-        'registrant',
-        'registrantLocation',
-        'cosmeticsManufacturer',
-        'packaging',
-        'composition',
-        'kits',
-        'issuedBy',
-        'dosageForm',
-        'applicationDate',
-        'issuedDate',
-        'expiryDate',
-        'status',
-    ];
-
-    const payload =
-        Object.fromEntries(
-            fields.map(
-                (key) => [
-                    key,
-                    clean(
-                        record[key],
-                    ),
-                ],
-            ),
-        );
+function hashFields(record, fields) {
+    const payload = Object.fromEntries(
+        fields.map((key) => [key, clean(record?.[key])]),
+    );
 
     return crypto
-        .createHash(
-            'sha256',
-        )
-        .update(
-            JSON.stringify(
-                payload,
-            ),
-        )
-        .digest(
-            'hex',
-        );
+        .createHash('sha256')
+        .update(JSON.stringify(payload))
+        .digest('hex');
+}
+
+function stableHash(record) {
+    return hashFields(record, [...LISTING_FIELDS, ...DETAIL_FIELDS]);
 }
 
 function basicHash(record) {
-    const fields = [
-        'registrationNumber',
-        'issuedDate',
-        'productName',
-        'brand',
-        'packaging',
-        'registrant',
-        'registrantLocation',
-    ];
+    return hashFields(record, LISTING_FIELDS);
+}
 
-    const payload =
-        Object.fromEntries(
-            fields.map(
-                (key) => [
-                    key,
-                    clean(
-                        record[key],
-                    ),
-                ],
-            ),
+function detailHash(record) {
+    return hashFields(record, DETAIL_FIELDS);
+}
+
+function inferDetailKnown(record = {}) {
+    return DETAIL_FIELDS.some((field) => clean(record[field]) !== '');
+}
+
+function previousKnownDetailFields(previousEntry) {
+    if (!previousEntry) return new Set();
+
+    if (Array.isArray(previousEntry.detailKnownFields)) {
+        return new Set(
+            previousEntry.detailKnownFields
+                .filter((field) => DETAIL_FIELDS.includes(field)),
         );
+    }
 
-    return crypto
-        .createHash(
-            'sha256',
-        )
-        .update(
-            JSON.stringify(
-                payload,
-            ),
-        )
-        .digest(
-            'hex',
+    const record = canonicalizeLegacyRecord(
+        previousEntry.record ?? {},
+    );
+
+    return new Set(
+        DETAIL_FIELDS.filter((field) => clean(record[field]) !== ''),
+    );
+}
+
+function previousDetailKnown(previousEntry) {
+    if (!previousEntry) return false;
+
+    if (typeof previousEntry.detailKnown === 'boolean') {
+        return previousEntry.detailKnown;
+    }
+
+    return previousKnownDetailFields(previousEntry).size > 0
+        || inferDetailKnown(
+            canonicalizeLegacyRecord(previousEntry.record ?? {}),
         );
 }
 
 function normalizeKey(label) {
     return clean(label)
         .toLowerCase()
-        .normalize(
-            'NFKD',
-        )
-        .replace(
-            /[^a-z0-9]+/g,
-            ' ',
-        )
+        .normalize('NFKD')
+        .replace(/[^a-z0-9]+/g, ' ')
         .trim();
 }
 
-function mapDetails(
-    raw = {},
-) {
-    const normalized =
-        Object.fromEntries(
-            Object.entries(
-                raw,
-            ).map(
-                ([
-                    key,
-                    value,
-                ]) => [
-                    normalizeKey(
-                        key,
-                    ),
-                    clean(
-                        value,
-                    ),
-                ],
-            ),
-        );
+function mapDetails(raw = {}) {
+    const normalized = Object.fromEntries(
+        Object.entries(raw).map(([key, value]) => [
+            normalizeKey(key),
+            clean(value),
+        ]),
+    );
 
-    const pick =
-        (...candidates) => {
-            for (
-                const candidate
-                of candidates
-            ) {
-                const target =
-                    normalizeKey(
-                        candidate,
-                    );
+    const pick = (...candidates) => {
+        for (const candidate of candidates) {
+            const target = normalizeKey(candidate);
 
-                if (
-                    normalized[
-                        target
-                    ]
-                ) {
-                    return normalized[
-                        target
-                    ];
-                }
-
-                const fuzzy =
-                    Object.entries(
-                        normalized,
-                    ).find(
-                        ([key]) =>
-                            key.includes(
-                                target,
-                            )
-                            || target.includes(
-                                key,
-                            ),
-                    );
-
-                if (
-                    fuzzy?.[1]
-                ) {
-                    return fuzzy[1];
-                }
+            if (normalized[target]) {
+                return normalized[target];
             }
 
-            return '';
-        };
+            const fuzzy = Object.entries(normalized).find(
+                ([key]) => key.includes(target) || target.includes(key),
+            );
+
+            if (fuzzy?.[1]) return fuzzy[1];
+        }
+
+        return '';
+    };
 
     return {
-        registrationNumber:
-            pick(
-                'nomor registrasi',
-                'nomor izin edar',
-                'nie',
-            ),
+        registrationNumber: pick(
+            'nomor registrasi',
+            'nomor izin edar',
+            'nie',
+        ),
+        productName: pick('nama produk'),
+        brand: pick('merk', 'merek'),
+        packaging: pick('kemasan'),
+        dosageForm: pick('bentuk sediaan'),
+        composition: pick('komposisi'),
+        applicationDate: pick('tanggal permohonan'),
+        issuedDate: pick('tanggal terbit'),
+        expiryDate: pick('tanggal expired', 'tanggal kedaluwarsa'),
+        registrant: pick('nama pendaftar', 'pendaftar'),
 
-        productName:
-            pick(
-                'nama produk',
-            ),
+        cosmeticsManufacturer: sanitizeCosmeticsManufacturer(
+            pick('industri kosmetika'),
+        ),
 
-        brand:
-            pick(
-                'merk',
-                'merek',
-            ),
+        primaryPackagingManufacturer:
+            pick('industri pengemas primer'),
 
-        packaging:
-            pick(
-                'kemasan',
-            ),
+        secondaryPackagingManufacturer:
+            pick('industri pengemas sekunder'),
 
-        dosageForm:
-            pick(
-                'bentuk sediaan',
-            ),
-
-        composition:
-            pick(
-                'komposisi',
-            ),
-
-        applicationDate:
-            pick(
-                'tanggal permohonan',
-            ),
-
-        issuedDate:
-            pick(
-                'tanggal terbit',
-            ),
-
-        expiryDate:
-            pick(
-                'tanggal expired',
-                'tanggal kedaluwarsa',
-            ),
-
-        registrant:
-            pick(
-                'nama pendaftar',
-                'pendaftar',
-            ),
-
-        cosmeticsManufacturer:
-            pick(
-                'industri kosmetika',
-            ),
-
-        kits:
-            pick(
-                'kits',
-            ),
-
-        issuedBy:
-            pick(
-                'diterbitkan oleh',
-            ),
-
-        status:
-            pick(
-                'status',
-            ),
+        kits: pick('kits'),
+        issuedBy: pick('diterbitkan oleh'),
+        status: pick('status'),
     };
 }
 
 function buildJobs(input) {
     const jobs = [];
 
-    const add =
-        (
-            kind,
-            values = [],
-        ) => {
-            for (
-                const raw
-                of values || []
-            ) {
-                const value =
-                    clean(raw);
+    const add = (kind, values = []) => {
+        for (const raw of values || []) {
+            const value = clean(raw);
 
-                if (value) {
-                    jobs.push({
-                        kind,
-                        value,
-                    });
-                }
+            if (value) {
+                jobs.push({
+                    kind,
+                    value,
+                });
             }
-        };
+        }
+    };
 
-    add(
-        'brand',
-        input.brands,
-    );
+    add('brand', input.brands);
+    add('registrant', input.registrants);
+    add('productName', input.productNames);
+    add('registrationNumber', input.registrationNumbers);
+    add('composition', input.compositions);
 
-    add(
-        'registrant',
-        input.registrants,
-    );
-
-    add(
-        'productName',
-        input.productNames,
-    );
-
-    add(
-        'registrationNumber',
-        input.registrationNumbers,
-    );
-
-    add(
-        'composition',
-        input.compositions,
-    );
-
-    if (
-        !jobs.length
-    ) {
+    if (!jobs.length) {
         throw new Error(
             'At least one monitoring criterion is required: brand, registrant, product name, registration number, or composition keyword.',
         );
@@ -454,66 +332,33 @@ function buildJobs(input) {
     return jobs;
 }
 
-function buildWatchSignature(
-    jobs,
-) {
-    const normalized =
-        jobs
-            .map(
-                (job) => ({
-                    kind:
-                        job.kind,
-
-                    value:
-                        clean(
-                            job.value,
-                        )
-                            .toLowerCase(),
-                }),
-            )
-            .sort(
-                (
-                    a,
-                    b,
-                ) =>
-                    `${a.kind}:${a.value}`
-                        .localeCompare(
-                            `${b.kind}:${b.value}`,
-                        ),
-            );
+function buildWatchSignature(jobs) {
+    const normalized = jobs
+        .map((job) => ({
+            kind: job.kind,
+            value: clean(job.value).toLowerCase(),
+        }))
+        .sort(
+            (a, b) =>
+                `${a.kind}:${a.value}`
+                    .localeCompare(
+                        `${b.kind}:${b.value}`,
+                    ),
+        );
 
     return crypto
-        .createHash(
-            'sha256',
-        )
-        .update(
-            JSON.stringify(
-                normalized,
-            ),
-        )
-        .digest(
-            'hex',
-        );
+        .createHash('sha256')
+        .update(JSON.stringify(normalized))
+        .digest('hex');
 }
 
-function inputPlaceholderFor(
-    kind,
-) {
+function inputPlaceholderFor(kind) {
     return {
-        registrationNumber:
-            'Masukkan Nomor Registrasi',
-
-        productName:
-            'Masukkan Nama Produk',
-
-        brand:
-            'Masukkan Merk',
-
-        composition:
-            'Masukkan Komposisi',
-
-        registrant:
-            'Masukkan Nama Pendaftar',
+        registrationNumber: 'Masukkan Nomor Registrasi',
+        productName: 'Masukkan Nama Produk',
+        brand: 'Masukkan Merk',
+        composition: 'Masukkan Komposisi',
+        registrant: 'Masukkan Nama Pendaftar',
     }[kind];
 }
 
@@ -521,17 +366,9 @@ function issuedAgeDays(
     issuedDate,
     referenceIso,
 ) {
-    const value =
-        clean(
-            issuedDate,
-        );
+    const value = clean(issuedDate);
 
-    if (
-        !/^\d{4}-\d{2}-\d{2}$/
-            .test(
-                value,
-            )
-    ) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
         return null;
     }
 
@@ -541,44 +378,26 @@ function issuedAgeDays(
         );
 
     const referenceMs =
-        Date.parse(
-            referenceIso,
-        );
+        Date.parse(referenceIso);
 
     if (
-        !Number.isFinite(
-            issuedMs,
-        )
-        || !Number.isFinite(
-            referenceMs,
-        )
+        !Number.isFinite(issuedMs)
+        || !Number.isFinite(referenceMs)
     ) {
         return null;
     }
 
     return Math.floor(
-        (
-            referenceMs
-            - issuedMs
-        )
+        (referenceMs - issuedMs)
         / DAY_MS,
     );
 }
 
-function isoDateOnly(
-    value,
-) {
-    const text =
-        clean(
-            value,
-        );
-
-    const match =
-        text.match(
+function isoDateOnly(value) {
+    return clean(value)
+        .match(
             /^(\d{4}-\d{2}-\d{2})/,
-        );
-
-    return match?.[1]
+        )?.[1]
         || '';
 }
 
@@ -586,93 +405,63 @@ function compareDateOnly(
     left,
     right,
 ) {
-    const a =
-        isoDateOnly(
-            left,
-        );
+    const a = isoDateOnly(left);
+    const b = isoDateOnly(right);
 
-    const b =
-        isoDateOnly(
-            right,
-        );
-
-    if (
-        !a
-        || !b
-    ) {
+    if (!a || !b) {
         return null;
     }
 
-    if (
-        a === b
-    ) {
+    if (a === b) {
         return 0;
     }
 
-    return (
-        a < b
-            ? -1
-            : 1
-    );
+    return a < b
+        ? -1
+        : 1;
 }
 
 function earliestFirstSeenAt(
     records = {},
 ) {
     const values =
-        Object.values(
-            records,
-        )
+        Object.values(records)
             .map(
                 (entry) =>
                     clean(
-                        entry
-                            ?.firstSeenAt
-                        || entry
-                            ?.record
-                            ?.scrapedAt,
+                        entry?.firstSeenAt
+                        || entry?.record?.scrapedAt,
                     ),
             )
             .filter(
                 (value) =>
                     Number.isFinite(
-                        Date.parse(
-                            value,
-                        ),
+                        Date.parse(value),
                     ),
             )
             .sort(
-                (
-                    a,
-                    b,
-                ) =>
+                (a, b) =>
                     Date.parse(a)
                     - Date.parse(b),
             );
 
-    return values[0]
-        || '';
+    return values[0] || '';
 }
 
 function previousObservationCount(
     previousEntry,
 ) {
-    if (
-        !previousEntry
-    ) {
+    if (!previousEntry) {
         return 0;
     }
 
     const value =
         Number(
-            previousEntry
-                .observationCount,
+            previousEntry.observationCount,
         );
 
     return (
-        Number.isFinite(
-            value,
-        )
+        Number.isFinite(value)
         && value >= 0
     )
         ? value
@@ -684,18 +473,87 @@ function previousConsecutiveMisses(
 ) {
     const value =
         Number(
-            previousEntry
-                ?.consecutiveMisses,
+            previousEntry?.consecutiveMisses,
         );
 
     return (
-        Number.isFinite(
-            value,
-        )
+        Number.isFinite(value)
         && value >= 0
     )
         ? value
         : 0;
+}
+
+function diffFields(
+    previous,
+    current,
+    fields,
+) {
+    return fields.filter(
+        (key) =>
+            clean(previous?.[key])
+            !== clean(current?.[key]),
+    );
+}
+
+function diffListingFields(
+    previous,
+    current,
+) {
+    return diffFields(
+        previous,
+        current,
+        LISTING_CHANGE_FIELDS,
+    );
+}
+
+function diffKnownDetailFields(
+    previous,
+    current,
+    previousKnownFields,
+    currentKnownFields,
+) {
+    return DETAIL_FIELDS.filter(
+        (key) =>
+            previousKnownFields.has(key)
+            && currentKnownFields.has(key)
+            && clean(previous?.[key])
+                !== clean(current?.[key]),
+    );
+}
+
+function calculateEnrichedFields(
+    previous,
+    current,
+    previousKnownFields,
+    currentKnownFields,
+) {
+    return DETAIL_FIELDS.filter(
+        (key) =>
+            !previousKnownFields.has(key)
+            && currentKnownFields.has(key)
+            && Boolean(
+                clean(current?.[key]),
+            ),
+    );
+}
+
+function shouldEmit(
+    mode,
+    eventType,
+) {
+    if (mode === 'new') {
+        return eventType === 'NEW';
+    }
+
+    if (mode === 'changes') {
+        return (
+            eventType === 'NEW'
+            || eventType === 'CHANGED'
+        );
+    }
+
+    return true;
 }
 
 async function visibleLocator(
@@ -731,9 +589,7 @@ async function getProductTable(
 ) {
     const tables =
         page
-            .locator(
-                'table',
-            )
+            .locator('table')
             .filter({
                 hasText:
                     /Nomor Registrasi/i,
@@ -743,8 +599,7 @@ async function getProductTable(
                     /Nama Produk/i,
             });
 
-    let fallback =
-        null;
+    let fallback = null;
 
     const count =
         await tables.count();
@@ -767,18 +622,13 @@ async function getProductTable(
             continue;
         }
 
-        if (
-            !fallback
-        ) {
-            fallback =
-                table;
+        if (!fallback) {
+            fallback = table;
         }
 
         if (
             await table
-                .locator(
-                    'tbody tr',
-                )
+                .locator('tbody tr')
                 .count()
             > 0
         ) {
@@ -786,9 +636,7 @@ async function getProductTable(
         }
     }
 
-    if (
-        fallback
-    ) {
+    if (fallback) {
         return fallback;
     }
 
@@ -816,9 +664,7 @@ async function waitForTable(
                         'table',
                     ),
             ].some(
-                (
-                    table,
-                ) => {
+                (table) => {
                     const headers =
                         (
                             table
@@ -836,13 +682,9 @@ async function waitForTable(
 
                     if (
                         !/Nomor Registrasi/i
-                            .test(
-                                headers,
-                            )
+                            .test(headers)
                         || !/Nama Produk/i
-                            .test(
-                                headers,
-                            )
+                            .test(headers)
                     ) {
                         return false;
                     }
@@ -876,9 +718,7 @@ async function waitForTable(
 
                     return (
                         /tidak ada data|no data|data kosong/i
-                            .test(
-                                body,
-                            )
+                            .test(body)
                     );
                 },
             ),
@@ -908,9 +748,7 @@ async function applyFilter(
             ),
         );
 
-    if (
-        !open
-    ) {
+    if (!open) {
         throw new Error(
             'BPOM Filter button was not found.',
         );
@@ -918,9 +756,7 @@ async function applyFilter(
 
     await open.click();
 
-    await sleep(
-        delay,
-    );
+    await sleep(delay);
 
     const placeholder =
         inputPlaceholderFor(
@@ -936,17 +772,13 @@ async function applyFilter(
             )
             : null;
 
-    if (
-        !field
-    ) {
+    if (!field) {
         throw new Error(
             `BPOM filter field was not found: ${placeholder || job.kind}`,
         );
     }
 
-    await field.fill(
-        job.value,
-    );
+    await field.fill(job.value);
 
     const apply =
         await visibleLocator(
@@ -959,9 +791,7 @@ async function applyFilter(
             ),
         );
 
-    if (
-        !apply
-    ) {
+    if (!apply) {
         throw new Error(
             'BPOM apply Filter button was not found.',
         );
@@ -984,9 +814,7 @@ async function applyFilter(
                         'table',
                     ),
             ].some(
-                (
-                    table,
-                ) => {
+                (table) => {
                     const headers =
                         (
                             table
@@ -1004,13 +832,9 @@ async function applyFilter(
 
                     return (
                         /Nomor Registrasi/i
-                            .test(
-                                headers,
-                            )
+                            .test(headers)
                         && /Nama Produk/i
-                            .test(
-                                headers,
-                            )
+                            .test(headers)
                         && table
                             .querySelectorAll(
                                 'tbody tr',
@@ -1056,9 +880,7 @@ async function extractDetailPairs(
 
             const normalize =
                 (value) =>
-                    cleanText(
-                        value,
-                    )
+                    cleanText(value)
                         .replace(
                             /:$/,
                             '',
@@ -1082,6 +904,8 @@ async function extractDetailPairs(
                 'Nama Pendaftar',
                 'Pendaftar',
                 'Industri Kosmetika',
+                'Industri Pengemas Primer',
+                'Industri Pengemas Sekunder',
                 'Kits',
                 'Diterbitkan Oleh',
                 'Status',
@@ -1091,9 +915,7 @@ async function extractDetailPairs(
                 new Map(
                     labels.map(
                         (label) => [
-                            normalize(
-                                label,
-                            ),
+                            normalize(label),
                             label,
                         ],
                     ),
@@ -1105,18 +927,14 @@ async function extractDetailPairs(
                     value,
                 ) => {
                     const normalizedKey =
-                        cleanText(
-                            key,
-                        )
+                        cleanText(key)
                             .replace(
                                 /:$/,
                                 '',
                             );
 
                     const normalizedValue =
-                        cleanText(
-                            value,
-                        );
+                        cleanText(value);
 
                     if (
                         normalizedKey
@@ -1139,9 +957,7 @@ async function extractDetailPairs(
                     'tr',
                 )
                 .forEach(
-                    (
-                        tr,
-                    ) => {
+                    (tr) => {
                         const cells =
                             [
                                 ...tr
@@ -1156,13 +972,10 @@ async function extractDetailPairs(
                                             || el.textContent,
                                         ),
                                 )
-                                .filter(
-                                    Boolean,
-                                );
+                                .filter(Boolean);
 
                         if (
-                            cells.length
-                                >= 2
+                            cells.length >= 2
                         ) {
                             put(
                                 cells[0],
@@ -1180,27 +993,15 @@ async function extractDetailPairs(
                     || root.textContent
                     || ''
                 )
-                    .split(
-                        /\r?\n/,
-                    )
-                    .map(
-                        cleanText,
-                    )
+                    .split(/\r?\n/)
+                    .map(cleanText)
+                    .filter(Boolean)
                     .filter(
-                        Boolean,
-                    )
-                    .filter(
-                        (
-                            line,
-                        ) =>
+                        (line) =>
                             !/^Detail Produk$/i
-                                .test(
-                                    line,
-                                )
+                                .test(line)
                             && !/^Close$/i
-                                .test(
-                                    line,
-                                )
+                                .test(line)
                             && line !== '×',
                     );
 
@@ -1239,19 +1040,14 @@ async function extractDetailPairs(
 
                 const label =
                     known.get(
-                        normalize(
-                            line,
-                        ),
+                        normalize(line),
                     );
 
-                if (
-                    !label
-                ) {
+                if (!label) {
                     continue;
                 }
 
-                const values =
-                    [];
+                const values = [];
 
                 for (
                     let j = i + 1;
@@ -1263,9 +1059,7 @@ async function extractDetailPairs(
 
                     if (
                         known.has(
-                            normalize(
-                                candidate,
-                            ),
+                            normalize(candidate),
                         )
                     ) {
                         break;
@@ -1297,9 +1091,7 @@ async function extractDetailPairs(
                 ) {
                     put(
                         label,
-                        values.join(
-                            ' ',
-                        ),
+                        values.join(' '),
                     );
                 }
             }
@@ -1339,9 +1131,7 @@ async function getVisibleDialog(
 
         if (
             /detail produk/i
-                .test(
-                    text,
-                )
+                .test(text)
             || text.length > 20
         ) {
             return dialog;
@@ -1396,10 +1186,11 @@ async function enrichFromRow(
                 page,
             );
 
-        if (
-            !dialog
-        ) {
-            return {};
+        if (!dialog) {
+            return {
+                __detailFetched:
+                    false,
+            };
         }
 
         const dialogText =
@@ -1480,7 +1271,12 @@ async function enrichFromRow(
             300,
         );
 
-        return details;
+        return {
+            ...details,
+
+            __detailFetched:
+                true,
+        };
     } catch (
         error
     ) {
@@ -1489,9 +1285,7 @@ async function enrichFromRow(
             {
                 error:
                     error?.message
-                    || String(
-                        error,
-                    ),
+                    || String(error),
             },
         );
 
@@ -1503,7 +1297,10 @@ async function enrichFromRow(
                 () => undefined,
             );
 
-        return {};
+        return {
+            __detailFetched:
+                false,
+        };
     }
 }
 
@@ -1522,17 +1319,14 @@ async function extractCurrentPage(
     crawlerLog,
 ) {
     const table =
-        await getProductTable(
-            page,
-        );
+        await getProductTable(page);
 
     const rows =
         table.locator(
             'tbody tr',
         );
 
-    const results =
-        [];
+    const results = [];
 
     const rowCount =
         await rows.count();
@@ -1549,9 +1343,7 @@ async function extractCurrentPage(
 
         const cells =
             await row
-                .locator(
-                    'td',
-                )
+                .locator('td')
                 .allInnerTexts();
 
         if (
@@ -1564,12 +1356,8 @@ async function extractCurrentPage(
             /tidak ada data|no data|data tidak/i
                 .test(
                     cells
-                        .map(
-                            clean,
-                        )
-                        .join(
-                            ' ',
-                        ),
+                        .map(clean)
+                        .join(' '),
                 )
         ) {
             continue;
@@ -1613,12 +1401,10 @@ async function extractCurrentPage(
                     .productName,
 
             brand:
-                product
-                    .brand,
+                product.brand,
 
             packaging:
-                product
-                    .packaging,
+                product.packaging,
 
             registrant:
                 registrant
@@ -1636,11 +1422,6 @@ async function extractCurrentPage(
             continue;
         }
 
-        const currentBasicHash =
-            basicHash(
-                list,
-            );
-
         const previousEntry =
             previousRecords[
                 list
@@ -1648,20 +1429,21 @@ async function extractCurrentPage(
             ];
 
         const previousRecord =
-            previousEntry
-                ?.record
-            ?? null;
+            previousEntry?.record
+                ? canonicalizeLegacyRecord(
+                    previousEntry.record,
+                )
+                : null;
+
+        const currentBasicHash =
+            basicHash(list);
 
         const previousBasicHash =
-            previousEntry
-                ?.basicHash
-            || (
-                previousRecord
-                    ? basicHash(
-                        previousRecord,
-                    )
-                    : ''
-            );
+            previousRecord
+                ? basicHash(
+                    previousRecord,
+                )
+                : '';
 
         const listingChanged =
             previousRecord
@@ -1723,165 +1505,77 @@ async function extractCurrentPage(
                     requestDelayMs,
                     crawlerLog,
                 )
-                : {};
+                : {
+                    __detailFetched:
+                        false,
+                };
 
-        const carriedDetail =
-            {};
+        const priorDetailKnown =
+            previousDetailKnown(
+                previousEntry,
+            );
 
-        if (
-            previousRecord
+        const currentKnownDetailFields =
+            previousKnownDetailFields(
+                previousEntry,
+            );
+
+        const detailValues = {};
+
+        for (
+            const field
+            of DETAIL_FIELDS
         ) {
-            const carryFields = [
-                'composition',
-                'cosmeticsManufacturer',
-                'kits',
-                'issuedBy',
-                'dosageForm',
-                'applicationDate',
-                'expiryDate',
-                'status',
-            ];
+            const previousValue =
+                clean(
+                    previousRecord?.[field],
+                );
 
-            for (
-                const field
-                of carryFields
+            const currentValue =
+                clean(
+                    detail[field],
+                );
+
+            detailValues[field] =
+                currentValue
+                || previousValue;
+
+            if (
+                detail.__detailFetched
+                    === true
+                && currentValue
             ) {
-                if (
-                    previousRecord[
-                        field
-                    ]
-                    !== undefined
-                ) {
-                    carriedDetail[
-                        field
-                    ] =
-                        previousRecord[
-                            field
-                        ];
-                }
+                currentKnownDetailFields
+                    .add(field);
             }
         }
 
+        const currentDetailKnown =
+            Boolean(
+                priorDetailKnown
+                || detail
+                    .__detailFetched
+                    === true
+                || currentKnownDetailFields
+                    .size
+                    > 0,
+            );
+
+        /*
+         * Listing fields are canonical.
+         * Modal detail hanya untuk enrichment.
+         * Modal tidak boleh overwrite:
+         * - productName
+         * - brand
+         * - issuedDate
+         * - packaging
+         * - registrant
+         * - registrantLocation
+         */
         const record = {
             ...list,
 
-            ...carriedDetail,
-
-            registrationNumber:
-                clean(
-                    detail
-                        .registrationNumber
-                    || list
-                        .registrationNumber,
-                ),
-
-            issuedDate:
-                clean(
-                    detail
-                        .issuedDate
-                    || list
-                        .issuedDate,
-                ),
-
-            productName:
-                clean(
-                    detail
-                        .productName
-                    || list
-                        .productName,
-                ),
-
-            brand:
-                clean(
-                    detail.brand
-                    || list.brand,
-                ),
-
-            packaging:
-                clean(
-                    detail
-                        .packaging
-                    || list
-                        .packaging,
-                ),
-
-            composition:
-                clean(
-                    detail
-                        .composition
-                    || carriedDetail
-                        .composition,
-                ),
-
-            registrant:
-                clean(
-                    detail
-                        .registrant
-                    || list
-                        .registrant,
-                ),
-
-            registrantLocation:
-                clean(
-                    list
-                        .registrantLocation,
-                ),
-
-            cosmeticsManufacturer:
-                clean(
-                    detail
-                        .cosmeticsManufacturer
-                    || carriedDetail
-                        .cosmeticsManufacturer,
-                ),
-
-            kits:
-                clean(
-                    detail
-                        .kits
-                    || carriedDetail
-                        .kits,
-                ),
-
-            issuedBy:
-                clean(
-                    detail
-                        .issuedBy
-                    || carriedDetail
-                        .issuedBy,
-                ),
-
-            dosageForm:
-                clean(
-                    detail
-                        .dosageForm
-                    || carriedDetail
-                        .dosageForm,
-                ),
-
-            applicationDate:
-                clean(
-                    detail
-                        .applicationDate
-                    || carriedDetail
-                        .applicationDate,
-                ),
-
-            expiryDate:
-                clean(
-                    detail
-                        .expiryDate
-                    || carriedDetail
-                        .expiryDate,
-                ),
-
-            status:
-                clean(
-                    detail
-                        .status
-                    || carriedDetail
-                        .status,
-                ),
+            ...detailValues,
 
             category:
                 'Kosmetika',
@@ -1905,11 +1599,27 @@ async function extractCurrentPage(
 
             __basicHash:
                 currentBasicHash,
+
+            __detailHash:
+                detailHash(
+                    detailValues,
+                ),
+
+            __detailKnown:
+                currentDetailKnown,
+
+            __detailKnownFields:
+                [
+                    ...currentKnownDetailFields,
+                ],
+
+            __detailFetched:
+                detail
+                    .__detailFetched
+                === true,
         };
 
-        results.push(
-            record,
-        );
+        results.push(record);
     }
 
     return results;
@@ -1930,9 +1640,7 @@ async function clickNext(
             ),
         );
 
-    if (
-        !next
-    ) {
+    if (!next) {
         return false;
     }
 
@@ -1951,9 +1659,7 @@ async function clickNext(
                 'aria-disabled',
             ) === 'true';
 
-    if (
-        disabled
-    ) {
+    if (disabled) {
         return false;
     }
 
@@ -1991,9 +1697,7 @@ async function clickNext(
 
     return page
         .waitForFunction(
-            (
-                previous,
-            ) =>
+            (previous) =>
                 [
                     ...document
                         .querySelectorAll(
@@ -2020,13 +1724,9 @@ async function clickNext(
 
                         if (
                             !/Nomor Registrasi/i
-                                .test(
-                                    headers,
-                                )
+                                .test(headers)
                             || !/Nama Produk/i
-                                .test(
-                                    headers,
-                                )
+                                .test(headers)
                         ) {
                             return false;
                         }
@@ -2047,9 +1747,7 @@ async function clickNext(
                                 .trim();
 
                         return (
-                            Boolean(
-                                current,
-                            )
+                            Boolean(current)
                             && current
                                 !== previous
                         );
@@ -2069,65 +1767,6 @@ async function clickNext(
         );
 }
 
-function diffFields(
-    previous,
-    current,
-) {
-    return [
-        'productName',
-        'brand',
-        'registrant',
-        'registrantLocation',
-        'cosmeticsManufacturer',
-        'packaging',
-        'composition',
-        'kits',
-        'issuedBy',
-        'dosageForm',
-        'applicationDate',
-        'issuedDate',
-        'expiryDate',
-        'status',
-    ].filter(
-        (key) =>
-            clean(
-                previous
-                    ?.[key],
-            )
-            !== clean(
-                current
-                    ?.[key],
-            ),
-    );
-}
-
-function shouldEmit(
-    mode,
-    eventType,
-) {
-    if (
-        mode === 'new'
-    ) {
-        return (
-            eventType
-                === 'NEW'
-        );
-    }
-
-    if (
-        mode === 'changes'
-    ) {
-        return (
-            eventType
-                === 'NEW'
-            || eventType
-                === 'CHANGED'
-        );
-    }
-
-    return true;
-}
-
 await Actor.main(
     async () => {
         const runStartedAt =
@@ -2138,9 +1777,7 @@ await Actor.main(
             ?? {};
 
         const jobs =
-            buildJobs(
-                input,
-            );
+            buildJobs(input);
 
         const watchSignature =
             buildWatchSignature(
@@ -2186,7 +1823,8 @@ await Actor.main(
             !Number.isInteger(
                 baselineWarmupRuns,
             )
-            || baselineWarmupRuns < 1
+            || baselineWarmupRuns
+                < 1
         ) {
             throw new Error(
                 'baselineWarmupRuns must be an integer >= 1.',
@@ -2197,7 +1835,8 @@ await Actor.main(
             !Number.isInteger(
                 newProductWindowDays,
             )
-            || newProductWindowDays < 1
+            || newProductWindowDays
+                < 1
         ) {
             throw new Error(
                 'newProductWindowDays must be an integer >= 1.',
@@ -2254,9 +1893,7 @@ await Actor.main(
                 ? maxItemsPerQuery
                 : Infinity;
 
-        if (
-            debug
-        ) {
+        if (debug) {
             log.setLevel(
                 log.LEVELS.DEBUG,
             );
@@ -2550,32 +2187,22 @@ await Actor.main(
 
                             if (
                                 seenRegistrationNumbers
-                                    .has(
-                                        key,
-                                    )
+                                    .has(key)
                             ) {
                                 duplicateRows++;
 
                                 duplicateRegistrationNumbers
-                                    .add(
-                                        key,
-                                    );
+                                    .add(key);
                             } else {
                                 seenRegistrationNumbers
-                                    .add(
-                                        key,
-                                    );
+                                    .add(key);
                             }
 
                             const existing =
                                 collected
-                                    .get(
-                                        key,
-                                    );
+                                    .get(key);
 
-                            if (
-                                !existing
-                            ) {
+                            if (!existing) {
                                 collected
                                     .set(
                                         key,
@@ -2599,9 +2226,7 @@ await Actor.main(
 
                                 if (
                                     !matches.some(
-                                        (
-                                            match,
-                                        ) =>
+                                        (match) =>
                                             match.type
                                                 === item
                                                     .matchedBy
@@ -2663,9 +2288,7 @@ await Actor.main(
                                 requestDelayMs,
                             );
 
-                        if (
-                            !moved
-                        ) {
+                        if (!moved) {
                             coverageComplete =
                                 true;
 
@@ -2749,51 +2372,48 @@ await Actor.main(
 
                         error:
                             error?.message
-                            || String(
-                                error,
-                            ),
+                            || String(error),
                     });
 
-                    querySummaries
-                        .set(
-                            request
-                                .uniqueKey,
-                            {
-                                queryId:
-                                    request
-                                        .uniqueKey,
+                    querySummaries.set(
+                        request
+                            .uniqueKey,
+                        {
+                            queryId:
+                                request
+                                    .uniqueKey,
 
-                                kind:
-                                    job.kind,
+                            kind:
+                                job.kind,
 
-                                value:
-                                    job.value,
+                            value:
+                                job.value,
 
-                                rawRowsCollected:
-                                    0,
+                            rawRowsCollected:
+                                0,
 
-                                uniqueProducts:
-                                    0,
+                            uniqueProducts:
+                                0,
 
-                                duplicateRows:
-                                    0,
+                            duplicateRows:
+                                0,
 
-                                duplicateRegistrationNumberCount:
-                                    0,
+                            duplicateRegistrationNumberCount:
+                                0,
 
-                                duplicateRegistrationNumbers:
-                                    [],
+                            duplicateRegistrationNumbers:
+                                [],
 
-                                pagesVisited:
-                                    0,
+                            pagesVisited:
+                                0,
 
-                                coverageComplete:
-                                    false,
+                            coverageComplete:
+                                false,
 
-                                stopReason:
-                                    'request_failed',
-                            },
-                        );
+                            stopReason:
+                                'request_failed',
+                        },
+                    );
 
                     crawlerLog.error(
                         `Query failed: ${job.kind}=${job.value}`,
@@ -2835,9 +2455,7 @@ await Actor.main(
             failedJobs.length === 0
             && querySummaryList
                 .every(
-                    (
-                        query,
-                    ) =>
+                    (query) =>
                         query
                             ?.coverageComplete
                         === true,
@@ -2982,8 +2600,7 @@ await Actor.main(
             );
         }
 
-        const observedRecords =
-            {};
+        const observedRecords = {};
 
         let baselineCount =
             0;
@@ -2998,6 +2615,9 @@ await Actor.main(
             0;
 
         let unchangedCount =
+            0;
+
+        let enrichedCount =
             0;
 
         let snapshotCount =
@@ -3021,6 +2641,9 @@ await Actor.main(
         const changedCandidates =
             [];
 
+        const enrichedCandidates =
+            [];
+
         for (
             const internalRecord
             of collected.values()
@@ -3032,6 +2655,40 @@ await Actor.main(
                     internalRecord,
                 );
 
+            const currentDetailHash =
+                internalRecord
+                    .__detailHash
+                || detailHash(
+                    internalRecord,
+                );
+
+            const currentDetailKnown =
+                Boolean(
+                    internalRecord
+                        .__detailKnown,
+                );
+
+            const currentKnownDetailFields =
+                new Set(
+                    Array
+                        .isArray(
+                            internalRecord
+                                .__detailKnownFields,
+                        )
+                        ? internalRecord
+                            .__detailKnownFields
+                        : DETAIL_FIELDS
+                            .filter(
+                                (field) =>
+                                    clean(
+                                        internalRecord[
+                                            field
+                                        ],
+                                    )
+                                    !== '',
+                            ),
+                );
+
             const record = {
                 ...internalRecord,
             };
@@ -3039,17 +2696,54 @@ await Actor.main(
             delete record
                 .__basicHash;
 
+            delete record
+                .__detailHash;
+
+            delete record
+                .__detailKnown;
+
+            delete record
+                .__detailKnownFields;
+
+            delete record
+                .__detailFetched;
+
+            record.registrant =
+                sanitizeRegistrant(
+                    record.registrant,
+                );
+
+            record
+                .cosmeticsManufacturer =
+                sanitizeCosmeticsManufacturer(
+                    record
+                        .cosmeticsManufacturer,
+                );
+
             const id =
                 record
                     .registrationNumber;
 
-            const hash =
-                stableHash(
-                    record,
-                );
-
             const previousEntry =
                 previousRecords[id];
+
+            const previousRecord =
+                previousEntry?.record
+                    ? canonicalizeLegacyRecord(
+                        previousEntry
+                            .record,
+                    )
+                    : null;
+
+            const previousWasDetailKnown =
+                previousDetailKnown(
+                    previousEntry,
+                );
+
+            const previousKnownDetailFieldsSet =
+                previousKnownDetailFields(
+                    previousEntry,
+                );
 
             const priorMisses =
                 previousConsecutiveMisses(
@@ -3070,12 +2764,50 @@ await Actor.main(
                 reappearedCount++;
             }
 
+            const listingChangedFields =
+                previousRecord
+                    ? diffListingFields(
+                        previousRecord,
+                        record,
+                    )
+                    : [];
+
+            const detailChangedFields =
+                (
+                    previousRecord
+                    && previousWasDetailKnown
+                    && currentDetailKnown
+                )
+                    ? diffKnownDetailFields(
+                        previousRecord,
+                        record,
+                        previousKnownDetailFieldsSet,
+                        currentKnownDetailFields,
+                    )
+                    : [];
+
+            const enrichedFields =
+                previousRecord
+                    ? calculateEnrichedFields(
+                        previousRecord,
+                        record,
+                        previousKnownDetailFieldsSet,
+                        currentKnownDetailFields,
+                    )
+                    : [];
+
+            const actualChangedFields =
+                [
+                    ...new Set([
+                        ...listingChangedFields,
+
+                        ...detailChangedFields,
+                    ]),
+                ];
+
             let eventType;
 
             let classificationReason;
-
-            let changedFields =
-                [];
 
             let previous;
 
@@ -3122,26 +2854,6 @@ await Actor.main(
                             'FIRST_SEEN_WITH_UNKNOWN_ISSUED_DATE';
 
                         discoveredCount++;
-
-                        if (
-                            discoveredCandidates
-                                .length
-                            < 100
-                        ) {
-                            discoveredCandidates.push({
-                                registrationNumber:
-                                    id,
-
-                                issuedDate:
-                                    record
-                                        .issuedDate,
-
-                                issuedAgeDays:
-                                    ageDays,
-
-                                classificationReason,
-                            });
-                        }
                     } else if (
                         boundaryComparison
                             === null
@@ -3153,28 +2865,9 @@ await Actor.main(
                             'FIRST_SEEN_WITH_UNKNOWN_BASELINE_BOUNDARY';
 
                         discoveredCount++;
-
-                        if (
-                            discoveredCandidates
-                                .length
-                            < 100
-                        ) {
-                            discoveredCandidates.push({
-                                registrationNumber:
-                                    id,
-
-                                issuedDate:
-                                    record
-                                        .issuedDate,
-
-                                issuedAgeDays:
-                                    ageDays,
-
-                                classificationReason,
-                            });
-                        }
                     } else if (
-                        boundaryComparison < 0
+                        boundaryComparison
+                            < 0
                     ) {
                         eventType =
                             'DISCOVERED';
@@ -3183,26 +2876,6 @@ await Actor.main(
                             'FIRST_SEEN_BEFORE_BASELINE_BOUNDARY';
 
                         discoveredCount++;
-
-                        if (
-                            discoveredCandidates
-                                .length
-                            < 100
-                        ) {
-                            discoveredCandidates.push({
-                                registrationNumber:
-                                    id,
-
-                                issuedDate:
-                                    record
-                                        .issuedDate,
-
-                                issuedAgeDays:
-                                    ageDays,
-
-                                classificationReason,
-                            });
-                        }
                     } else if (
                         ageDays < -1
                     ) {
@@ -3213,26 +2886,6 @@ await Actor.main(
                             'FIRST_SEEN_WITH_FUTURE_ISSUED_DATE';
 
                         discoveredCount++;
-
-                        if (
-                            discoveredCandidates
-                                .length
-                            < 100
-                        ) {
-                            discoveredCandidates.push({
-                                registrationNumber:
-                                    id,
-
-                                issuedDate:
-                                    record
-                                        .issuedDate,
-
-                                issuedAgeDays:
-                                    ageDays,
-
-                                classificationReason,
-                            });
-                        }
                     } else if (
                         ageDays
                             > newProductWindowDays
@@ -3244,26 +2897,6 @@ await Actor.main(
                             'FIRST_SEEN_OUTSIDE_NEW_PRODUCT_WINDOW';
 
                         discoveredCount++;
-
-                        if (
-                            discoveredCandidates
-                                .length
-                            < 100
-                        ) {
-                            discoveredCandidates.push({
-                                registrationNumber:
-                                    id,
-
-                                issuedDate:
-                                    record
-                                        .issuedDate,
-
-                                issuedAgeDays:
-                                    ageDays,
-
-                                classificationReason,
-                            });
-                        }
                     } else {
                         eventType =
                             'NEW';
@@ -3272,45 +2905,50 @@ await Actor.main(
                             'FIRST_SEEN_ON_OR_AFTER_BASELINE_BOUNDARY';
 
                         newCount++;
-
-                        if (
-                            newCandidates
-                                .length
-                            < 100
-                        ) {
-                            newCandidates.push({
-                                registrationNumber:
-                                    id,
-
-                                issuedDate:
-                                    record
-                                        .issuedDate,
-
-                                issuedAgeDays:
-                                    ageDays,
-
-                                classificationReason,
-                            });
-                        }
                     }
                 }
             } else if (
                 !baselineReadyBeforeRun
-                && previousEntry
-                    .hash
-                    !== hash
             ) {
-                eventType =
-                    'BASELINE';
+                if (
+                    actualChangedFields
+                        .length
+                    > 0
+                ) {
+                    eventType =
+                        'BASELINE';
 
-                classificationReason =
-                    'BASELINE_RECORD_UPDATED_DURING_WARMUP';
+                    classificationReason =
+                        'BASELINE_RECORD_UPDATED_DURING_WARMUP';
 
-                baselineCount++;
+                    baselineCount++;
+                } else if (
+                    enrichedFields
+                        .length
+                    > 0
+                ) {
+                    eventType =
+                        'UNCHANGED';
+
+                    classificationReason =
+                        'BASELINE_RECORD_ENRICHED';
+
+                    enrichedCount++;
+
+                    unchangedCount++;
+                } else {
+                    eventType =
+                        'UNCHANGED';
+
+                    classificationReason =
+                        'BASELINE_RECORD_REOBSERVED';
+
+                    unchangedCount++;
+                }
             } else if (
-                previousEntry
-                    .hash
-                    !== hash
+                actualChangedFields
+                    .length
+                > 0
             ) {
                 eventType =
                     'CHANGED';
@@ -3319,42 +2957,115 @@ await Actor.main(
                     'KNOWN_RECORD_CHANGED';
 
                 previous =
-                    previousEntry
-                        .record;
-
-                changedFields =
-                    diffFields(
-                        previousEntry
-                            .record,
-                        record,
-                    );
+                    previousRecord;
 
                 changedCount++;
+            } else if (
+                enrichedFields
+                    .length
+                > 0
+            ) {
+                eventType =
+                    'UNCHANGED';
 
-                if (
-                    changedCandidates
-                        .length
-                    < 100
-                ) {
-                    changedCandidates.push({
-                        registrationNumber:
-                            id,
+                classificationReason =
+                    'KNOWN_RECORD_ENRICHED';
 
-                        changedFields,
+                enrichedCount++;
 
-                        classificationReason,
-                    });
-                }
+                unchangedCount++;
             } else {
                 eventType =
                     'UNCHANGED';
 
                 classificationReason =
-                    baselineReadyBeforeRun
-                        ? 'KNOWN_RECORD_UNCHANGED'
-                        : 'BASELINE_RECORD_REOBSERVED';
+                    'KNOWN_RECORD_UNCHANGED';
 
                 unchangedCount++;
+            }
+
+            if (
+                eventType === 'NEW'
+                && newCandidates
+                    .length
+                    < 100
+            ) {
+                newCandidates.push({
+                    registrationNumber:
+                        id,
+
+                    issuedDate:
+                        record
+                            .issuedDate,
+
+                    issuedAgeDays:
+                        ageDays,
+
+                    classificationReason,
+                });
+            }
+
+            if (
+                eventType
+                    === 'DISCOVERED'
+                && discoveredCandidates
+                    .length
+                    < 100
+            ) {
+                discoveredCandidates
+                    .push({
+                        registrationNumber:
+                            id,
+
+                        issuedDate:
+                            record
+                                .issuedDate,
+
+                        issuedAgeDays:
+                            ageDays,
+
+                        classificationReason,
+                    });
+            }
+
+            if (
+                eventType
+                    === 'CHANGED'
+                && changedCandidates
+                    .length
+                    < 100
+            ) {
+                changedCandidates
+                    .push({
+                        registrationNumber:
+                            id,
+
+                        changedFields:
+                            actualChangedFields,
+
+                        enrichedFields,
+
+                        classificationReason,
+                    });
+            }
+
+            if (
+                enrichedFields
+                    .length
+                    > 0
+                && enrichedCandidates
+                    .length
+                    < 100
+            ) {
+                enrichedCandidates
+                    .push({
+                        registrationNumber:
+                            id,
+
+                        enrichedFields,
+
+                        classificationReason,
+                    });
             }
 
             const output = {
@@ -3370,7 +3081,10 @@ await Actor.main(
                 detectedAt:
                     isoNow(),
 
-                changedFields,
+                changedFields:
+                    actualChangedFields,
+
+                enrichedFields,
 
                 ...(
                     previous
@@ -3408,10 +3122,24 @@ await Actor.main(
                     : runStartedAt;
 
             observedRecords[id] = {
-                hash,
+                hash:
+                    stableHash(
+                        record,
+                    ),
 
                 basicHash:
                     currentBasicHash,
+
+                detailHash:
+                    currentDetailHash,
+
+                detailKnown:
+                    currentDetailKnown,
+
+                detailKnownFields:
+                    [
+                        ...currentKnownDetailFields,
+                    ],
 
                 record,
 
@@ -3426,7 +3154,8 @@ await Actor.main(
                 observationCount:
                     previousObservationCount(
                         previousEntry,
-                    ) + 1,
+                    )
+                    + 1,
 
                 consecutiveMisses:
                     0,
@@ -3446,22 +3175,23 @@ await Actor.main(
             );
 
         const possiblyMissing =
-            detectChanges
-            && !baselineReset
-            && overallCoverageComplete
+            (
+                detectChanges
+                && !baselineReset
+                && overallCoverageComplete
+            )
                 ? previousIds
                     .filter(
                         (id) =>
                             !observedIds
-                                .has(
-                                    id,
-                                ),
+                                .has(id),
                     )
                 : [];
 
         const snapshotCanUpdate =
             detectChanges
-            && failedJobs.length
+            && failedJobs
+                .length
                 === 0
             && (
                 overallCoverageComplete
@@ -3485,9 +3215,7 @@ await Actor.main(
             ) {
                 if (
                     observedIds
-                        .has(
-                            id,
-                        )
+                        .has(id)
                 ) {
                     continue;
                 }
@@ -3546,8 +3274,10 @@ await Actor.main(
         }
 
         const successfulRunsAfter =
-            snapshotCanUpdate
-            && overallCoverageComplete
+            (
+                snapshotCanUpdate
+                && overallCoverageComplete
+            )
                 ? successfulRunsBefore
                     + 1
                 : successfulRunsBefore;
@@ -3680,9 +3410,7 @@ await Actor.main(
             new Set(
                 querySummaryList
                     .flatMap(
-                        (
-                            query,
-                        ) =>
+                        (query) =>
                             query
                                 ?.duplicateRegistrationNumbers
                             ?? [],
@@ -3696,9 +3424,7 @@ await Actor.main(
                     100,
                 )
                 .map(
-                    (
-                        id,
-                    ) => {
+                    (id) => {
                         const entry =
                             nextRecords[id]
                             || previousRecords[id];
@@ -3796,8 +3522,7 @@ await Actor.main(
                     jobs.length,
 
                 failedQueries:
-                    failedJobs
-                        .length,
+                    failedJobs.length,
 
                 coverageComplete:
                     overallCoverageComplete,
@@ -3805,12 +3530,10 @@ await Actor.main(
                 detailStrategy,
 
                 detailFetches:
-                    detailStats
-                        .requested,
+                    detailStats.requested,
 
                 detailSkips:
-                    detailStats
-                        .skipped,
+                    detailStats.skipped,
 
                 rawRowsCollected:
                     totalRawRowsCollected,
@@ -3849,6 +3572,9 @@ await Actor.main(
 
                 changedProducts:
                     changedCount,
+
+                enrichedProducts:
+                    enrichedCount,
 
                 unchangedProducts:
                     unchangedCount,
@@ -3889,6 +3615,9 @@ await Actor.main(
 
                 changed:
                     changedCandidates,
+
+                enriched:
+                    enrichedCandidates,
             },
 
             baselineReset,
