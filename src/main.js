@@ -4,7 +4,7 @@ import { PlaywrightCrawler } from 'crawlee';
 
 const BASE_URL = 'https://cekbpom.pom.go.id/produk-kosmetika';
 const SNAPSHOT_VERSION = 7;
-const ACTOR_VERSION = '0.2.6-r2';
+const ACTOR_VERSION = '0.2.6-r3';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const LISTING_FIELDS = [
@@ -324,12 +324,8 @@ function mapDetails(raw = {}) {
         cosmeticsManufacturer: sanitizeCosmeticsManufacturer(
             pick('industri kosmetika'),
         ),
-        primaryPackagingManufacturer: pick(
-            'industri pengemas primer',
-        ),
-        secondaryPackagingManufacturer: pick(
-            'industri pengemas sekunder',
-        ),
+        primaryPackagingManufacturer: pick('industri pengemas primer'),
+        secondaryPackagingManufacturer: pick('industri pengemas sekunder'),
         kits: pick('kits'),
         issuedBy: pick('diterbitkan oleh'),
         status: pick('status'),
@@ -368,9 +364,7 @@ function buildWatchSignature(jobs) {
             value: clean(job.value).toLowerCase(),
         }))
         .sort((a, b) =>
-            `${a.kind}:${a.value}`.localeCompare(
-                `${b.kind}:${b.value}`,
-            ),
+            `${a.kind}:${a.value}`.localeCompare(`${b.kind}:${b.value}`),
         );
 
     return crypto
@@ -420,12 +414,10 @@ function compareDateOnly(left, right) {
 
 function earliestFirstSeenAt(records = {}) {
     const values = Object.values(records)
-        .map((entry) =>
-            clean(
-                entry?.firstSeenAt
-                || entry?.record?.scrapedAt,
-            ),
-        )
+        .map((entry) => clean(
+            entry?.firstSeenAt
+            || entry?.record?.scrapedAt,
+        ))
         .filter((value) => Number.isFinite(Date.parse(value)))
         .sort((a, b) => Date.parse(a) - Date.parse(b));
 
@@ -957,31 +949,175 @@ async function getVisibleDialog(page) {
     return null;
 }
 
+async function waitForBpomUiIdle(
+    page,
+    timeoutMs = 6000,
+) {
+    return page
+        .waitForFunction(
+            () => {
+                const isVisible =
+                    (element) =>
+                        Boolean(
+                            element
+                            && (
+                                element
+                                    .offsetWidth
+                                || element
+                                    .offsetHeight
+                                || element
+                                    .getClientRects()
+                                    .length
+                            ),
+                        );
+
+                const blockingOverlayVisible =
+                    [
+                        ...document
+                            .querySelectorAll(
+                                '.blockUI.blockOverlay, .blockUI.blockMsg, .dataTables_processing',
+                            ),
+                    ].some(
+                        isVisible,
+                    );
+
+                const modalVisible =
+                    [
+                        ...document
+                            .querySelectorAll(
+                                '#modalDetail, .modal.show, .modal[aria-modal="true"]',
+                            ),
+                    ].some(
+                        isVisible,
+                    );
+
+                return (
+                    !blockingOverlayVisible
+                    && !modalVisible
+                );
+            },
+            undefined,
+            {
+                timeout:
+                    timeoutMs,
+            },
+        )
+        .then(() => true)
+        .catch(() => false);
+}
+
 async function waitForBlockingOverlayToClear(
     page,
     timeoutMs = 4000,
 ) {
-    const overlay = page
-        .locator(
-            '.blockUI.blockOverlay:visible',
+    return page
+        .waitForFunction(
+            () => {
+                const isVisible =
+                    (element) =>
+                        Boolean(
+                            element
+                            && (
+                                element
+                                    .offsetWidth
+                                || element
+                                    .offsetHeight
+                                || element
+                                    .getClientRects()
+                                    .length
+                            ),
+                        );
+
+                return ![
+                    ...document
+                        .querySelectorAll(
+                            '.blockUI.blockOverlay, .blockUI.blockMsg, .dataTables_processing',
+                        ),
+                ].some(
+                    isVisible,
+                );
+            },
+            undefined,
+            {
+                timeout:
+                    timeoutMs,
+            },
         )
-        .first();
-
-    if (
-        !await overlay
-            .count()
-            .catch(() => 0)
-    ) {
-        return true;
-    }
-
-    return overlay
-        .waitFor({
-            state: 'hidden',
-            timeout: timeoutMs,
-        })
         .then(() => true)
         .catch(() => false);
+}
+
+async function requestFrameworkModalHide(
+    page,
+) {
+    return page
+        .evaluate(() => {
+            const modal =
+                document
+                    .querySelector(
+                        '#modalDetail',
+                    );
+
+            if (!modal) {
+                return 'NO_MODAL';
+            }
+
+            try {
+                if (
+                    window
+                        .bootstrap
+                        ?.Modal
+                ) {
+                    const instance =
+                        window
+                            .bootstrap
+                            .Modal
+                            .getInstance(
+                                modal,
+                            )
+                        || window
+                            .bootstrap
+                            .Modal
+                            .getOrCreateInstance(
+                                modal,
+                            );
+
+                    instance.hide();
+
+                    return 'BOOTSTRAP';
+                }
+            } catch {
+                // Continue to jQuery fallback.
+            }
+
+            try {
+                const jq =
+                    window.jQuery
+                    || window.$;
+
+                if (
+                    jq
+                    && typeof jq
+                        .fn
+                        ?.modal
+                        === 'function'
+                ) {
+                    jq(modal)
+                        .modal(
+                            'hide',
+                        );
+
+                    return 'JQUERY';
+                }
+            } catch {
+                // Continue to close button.
+            }
+
+            return 'UNAVAILABLE';
+        })
+        .catch(
+            () => 'ERROR',
+        );
 }
 
 async function cleanupDetailUi(
@@ -992,98 +1128,137 @@ async function cleanupDetailUi(
     } = {},
 ) {
     let forcedCleanup = false;
+    let frameworkHideMethod =
+        'NOT_NEEDED';
 
-    await page
-        .keyboard
-        .press('Escape')
-        .catch(() => undefined);
+    const initialDialog =
+        await visibleLocator(
+            page.locator(
+                '#modalDetail:visible, .modal:visible',
+            ),
+        ).catch(() => null);
 
-    const dialog = await visibleLocator(
-        page.locator(
-            '#modalDetail:visible, .modal:visible',
-        ),
-    ).catch(() => null);
-
-    if (dialog) {
-        const closeByRole =
-            await visibleLocator(
-                dialog.getByRole(
-                    'button',
-                    {
-                        name:
-                            /^(Close|Tutup)$/i,
-                    },
-                ),
-            ).catch(() => null);
-
-        const closeBySelector =
-            closeByRole
-                ? null
-                : await visibleLocator(
-                    dialog.locator(
-                        '[data-bs-dismiss="modal"], [data-dismiss="modal"], .btn-close, button.close',
-                    ),
-                ).catch(() => null);
-
-        const close =
-            closeByRole
-            || closeBySelector;
-
-        if (close) {
-            await close
-                .click({
-                    timeout: 2500,
-                    force: true,
-                })
-                .catch(
-                    () => undefined,
-                );
-        }
+    if (initialDialog) {
+        frameworkHideMethod =
+            await requestFrameworkModalHide(
+                page,
+            );
 
         await page
             .keyboard
             .press('Escape')
             .catch(() => undefined);
+
+        const dialogStillVisible =
+            await visibleLocator(
+                page.locator(
+                    '#modalDetail:visible, .modal:visible',
+                ),
+            ).catch(
+                () => null,
+            );
+
+        if (dialogStillVisible) {
+            const closeByRole =
+                await visibleLocator(
+                    dialogStillVisible
+                        .getByRole(
+                            'button',
+                            {
+                                name:
+                                    /^(Close|Tutup)$/i,
+                            },
+                        ),
+                ).catch(
+                    () => null,
+                );
+
+            const closeBySelector =
+                closeByRole
+                    ? null
+                    : await visibleLocator(
+                        dialogStillVisible
+                            .locator(
+                                '[data-bs-dismiss="modal"], [data-dismiss="modal"], .btn-close, button.close',
+                            ),
+                    ).catch(
+                        () => null,
+                    );
+
+            const close =
+                closeByRole
+                || closeBySelector;
+
+            if (close) {
+                await close
+                    .click({
+                        timeout:
+                            1800,
+                    })
+                    .catch(
+                        () =>
+                            undefined,
+                    );
+            }
+        }
+    } else {
+        await page
+            .keyboard
+            .press('Escape')
+            .catch(
+                () => undefined,
+            );
     }
 
-    const modalHidden =
+    let modalHidden =
         await page
             .locator(
                 '#modalDetail:visible, .modal:visible',
             )
             .first()
             .waitFor({
-                state: 'hidden',
-                timeout: 1800,
+                state:
+                    'hidden',
+                timeout:
+                    2200,
             })
-            .then(() => true)
-            .catch(() => false);
+            .then(
+                () => true,
+            )
+            .catch(
+                () => false,
+            );
 
     let overlayGone =
         await waitForBlockingOverlayToClear(
             page,
-            2500,
+            3500,
         );
 
+    /*
+     * Important:
+     * do not blindly remove BPOM's blockUI overlay.
+     * It can represent a real in-flight request.
+     */
     if (
         force
-        && (
-            !modalHidden
-            || !overlayGone
-        )
+        && !modalHidden
     ) {
         forcedCleanup = true;
 
         await page
             .evaluate(() => {
                 const modal =
-                    document.querySelector(
-                        '#modalDetail',
-                    );
+                    document
+                        .querySelector(
+                            '#modalDetail',
+                        );
 
                 if (modal) {
                     modal.classList
-                        .remove('show');
+                        .remove(
+                            'show',
+                        );
 
                     modal.setAttribute(
                         'aria-hidden',
@@ -1094,19 +1269,25 @@ async function cleanupDetailUi(
                         'aria-modal',
                     );
 
-                    modal.style.display =
-                        'none';
+                    modal.style
+                        .display =
+                            'none';
                 }
 
-                document.body.classList
-                    .remove('modal-open');
+                document.body
+                    .classList
+                    .remove(
+                        'modal-open',
+                    );
 
-                document.body.style
+                document.body
+                    .style
                     .removeProperty(
                         'padding-right',
                     );
 
-                document.body.style
+                document.body
+                    .style
                     .removeProperty(
                         'overflow',
                     );
@@ -1117,44 +1298,47 @@ async function cleanupDetailUi(
                     )
                     .forEach(
                         (element) =>
-                            element.remove(),
-                    );
-
-                document
-                    .querySelectorAll(
-                        '.blockUI.blockOverlay, .blockUI.blockMsg',
-                    )
-                    .forEach(
-                        (element) =>
-                            element.remove(),
+                            element
+                                .remove(),
                     );
             })
-            .catch(() => undefined);
-
-        overlayGone =
-            await waitForBlockingOverlayToClear(
-                page,
-                1000,
+            .catch(
+                () => undefined,
             );
-    }
 
-    if (forcedCleanup) {
-        crawlerLog.debug(
-            'Forced cleanup of stale BPOM modal/overlay state.',
-        );
-    }
-
-    return {
-        modalHidden:
+        modalHidden =
             !await page
                 .locator(
                     '#modalDetail:visible, .modal:visible',
                 )
                 .first()
                 .count()
-                .catch(() => 0),
+                .catch(
+                    () => 0,
+                );
+
+        overlayGone =
+            await waitForBlockingOverlayToClear(
+                page,
+                4500,
+            );
+    }
+
+    if (forcedCleanup) {
+        crawlerLog.debug(
+            'Forced cleanup of stale BPOM modal state.',
+            {
+                frameworkHideMethod,
+                overlayGone,
+            },
+        );
+    }
+
+    return {
+        modalHidden,
         overlayGone,
         forcedCleanup,
+        frameworkHideMethod,
     };
 }
 
@@ -1175,10 +1359,13 @@ async function enrichFromRow(
     ) {
         try {
             if (attempt > 1) {
-                detailStats.localRetries++;
+                detailStats
+                    .localRetries++;
 
                 await page
-                    .waitForTimeout(400);
+                    .waitForTimeout(
+                        400,
+                    );
             }
 
             await cleanupDetailUi(
@@ -1189,13 +1376,26 @@ async function enrichFromRow(
                 },
             );
 
+            const uiReady =
+                await waitForBpomUiIdle(
+                    page,
+                    6000,
+                );
+
+            if (!uiReady) {
+                throw new Error(
+                    'BPOM UI did not become idle before opening product detail.',
+                );
+            }
+
             const clickable =
                 row.locator(
                     'a, button, [role="button"]',
                 );
 
             const count =
-                await clickable.count();
+                await clickable
+                    .count();
 
             crawlerLog.debug(
                 'Opening BPOM product detail.',
@@ -1210,23 +1410,26 @@ async function enrichFromRow(
                 await clickable
                     .first()
                     .click({
-                        timeout: 8000,
+                        timeout:
+                            8000,
                     });
             } else {
                 await row.click({
-                    timeout: 8000,
+                    timeout:
+                        8000,
                 });
             }
 
-            await page.waitForTimeout(
-                Math.max(
-                    500,
-                    Math.min(
-                        delay,
-                        1200,
+            await page
+                .waitForTimeout(
+                    Math.max(
+                        500,
+                        Math.min(
+                            delay,
+                            1200,
+                        ),
                     ),
-                ),
-            );
+                );
 
             await page
                 .locator(
@@ -1234,10 +1437,14 @@ async function enrichFromRow(
                 )
                 .first()
                 .waitFor({
-                    state: 'visible',
-                    timeout: 8000,
+                    state:
+                        'visible',
+                    timeout:
+                        8000,
                 })
-                .catch(() => undefined);
+                .catch(
+                    () => undefined,
+                );
 
             const dialog =
                 await getVisibleDialog(
@@ -1263,10 +1470,11 @@ async function enrichFromRow(
                 'BPOM product detail dialog detected.',
                 {
                     textPreview:
-                        dialogText.slice(
-                            0,
-                            2000,
-                        ),
+                        dialogText
+                            .slice(
+                                0,
+                                2000,
+                            ),
                     attempt,
                 },
             );
@@ -1277,7 +1485,9 @@ async function enrichFromRow(
                 );
 
             const details =
-                mapDetails(rawPairs);
+                mapDetails(
+                    rawPairs,
+                );
 
             crawlerLog.debug(
                 'BPOM product detail raw fields.',
@@ -1297,7 +1507,8 @@ async function enrichFromRow(
 
             return {
                 ...details,
-                __detailFetched: true,
+                __detailFetched:
+                    true,
             };
         } catch (error) {
             lastError = error;
@@ -1308,8 +1519,11 @@ async function enrichFromRow(
                     attempt,
                     maxAttempts,
                     error:
-                        error?.message
-                        || String(error),
+                        error
+                            ?.message
+                        || String(
+                            error,
+                        ),
                 },
             );
         } finally {
@@ -1329,9 +1543,11 @@ async function enrichFromRow(
         'Skipping BPOM product detail after local retries.',
         {
             error:
-                lastError?.message
+                lastError
+                    ?.message
                 || String(
-                    lastError || '',
+                    lastError
+                    || '',
                 ),
         },
     );
@@ -1360,10 +1576,14 @@ async function extractCurrentPage(
     crawlerLog,
 ) {
     const table =
-        await getProductTable(page);
+        await getProductTable(
+            page,
+        );
 
     const rows =
-        table.locator('tbody tr');
+        table.locator(
+            'tbody tr',
+        );
 
     const results = [];
 
@@ -1373,7 +1593,8 @@ async function extractCurrentPage(
     for (
         let i = 0;
         i < rowCount
-        && results.length < maxRemaining;
+        && results.length
+            < maxRemaining;
         i++
     ) {
         const row =
@@ -1403,61 +1624,75 @@ async function extractCurrentPage(
 
         const registration =
             parseRegistrationCell(
-                cells[1] || '',
+                cells[1]
+                || '',
             );
 
         const product =
             parseProductCell(
-                cells[2] || '',
+                cells[2]
+                || '',
             );
 
         const registrant =
             parseRegistrantCell(
-                cells[3] || '',
+                cells[3]
+                || '',
             );
 
         const list = {
             productType:
-                clean(cells[0])
+                clean(
+                    cells[0],
+                )
                 || 'KO',
             registrationNumber:
                 registration
                     .registrationNumber,
             issuedDate:
-                registration.issuedDate,
+                registration
+                    .issuedDate,
             productName:
-                product.productName,
+                product
+                    .productName,
             brand:
                 product.brand,
             packaging:
                 product.packaging,
             registrant:
-                registrant.registrant,
+                registrant
+                    .registrant,
             registrantLocation:
                 registrant
                     .registrantLocation,
         };
 
         if (
-            !list.registrationNumber
+            !list
+                .registrationNumber
         ) {
             continue;
         }
 
         const previousEntry =
             previousRecords[
-                list.registrationNumber
+                list
+                    .registrationNumber
             ];
 
         const previousRecord =
-            previousEntry?.record
+            previousEntry
+                ?.record
                 ? canonicalizeLegacyRecord(
-                    previousEntry.record,
+                    previousEntry
+                        .record,
                 )
                 : null;
 
         const currentBasicHash =
-            basicHash(list);
+            basicHash(
+                list,
+            );
 
         const previousBasicHash =
             previousRecord
@@ -1481,7 +1716,8 @@ async function extractCurrentPage(
         if (
             !detailDecisionRegistrationNumbers
                 .has(
-                    list.registrationNumber,
+                    list
+                        .registrationNumber,
                 )
         ) {
             const previousDetailFetchedAt =
@@ -1497,9 +1733,12 @@ async function extractCurrentPage(
                 );
 
             if (
-                detailStrategy === 'always'
+                detailStrategy
+                === 'always'
             ) {
-                shouldFetchDetail = true;
+                shouldFetchDetail =
+                    true;
+
                 detailFetchReason =
                     'ALWAYS';
             } else if (
@@ -1511,7 +1750,8 @@ async function extractCurrentPage(
                     || listingChanged
                 )
             ) {
-                shouldFetchDetail = true;
+                shouldFetchDetail =
+                    true;
 
                 detailFetchReason =
                     !previousRecord
@@ -1521,7 +1761,9 @@ async function extractCurrentPage(
                 detailStrategy
                     === 'staleOnly'
             ) {
-                if (!previousRecord) {
+                if (
+                    !previousRecord
+                ) {
                     shouldFetchDetail =
                         true;
 
@@ -1566,7 +1808,8 @@ async function extractCurrentPage(
                     === 'staleOnly'
                 && detailFetchLimitPerRun
                     > 0
-                && detailStats.requested
+                && detailStats
+                    .requested
                     >= detailFetchLimitPerRun
             ) {
                 shouldFetchDetail =
@@ -1581,11 +1824,15 @@ async function extractCurrentPage(
 
             detailDecisionRegistrationNumbers
                 .add(
-                    list.registrationNumber,
+                    list
+                        .registrationNumber,
                 );
 
-            if (shouldFetchDetail) {
-                detailStats.requested++;
+            if (
+                shouldFetchDetail
+            ) {
+                detailStats
+                    .requested++;
 
                 detailStats
                     .byReason[
@@ -1597,9 +1844,11 @@ async function extractCurrentPage(
                                     detailFetchReason
                                 ]
                             || 0
-                        ) + 1;
+                        )
+                        + 1;
             } else {
-                detailStats.skipped++;
+                detailStats
+                    .skipped++;
             }
         }
 
@@ -1641,7 +1890,9 @@ async function extractCurrentPage(
 
             const currentValue =
                 clean(
-                    detail[field],
+                    detail[
+                        field
+                    ],
                 );
 
             detailValues[field] =
@@ -1649,12 +1900,15 @@ async function extractCurrentPage(
                 || previousValue;
 
             if (
-                detail.__detailFetched
+                detail
+                    .__detailFetched
                     === true
                 && currentValue
             ) {
                 currentKnownDetailFields
-                    .add(field);
+                    .add(
+                        field,
+                    );
             }
         }
 
@@ -1678,8 +1932,10 @@ async function extractCurrentPage(
             sourceUrl:
                 BASE_URL,
             matchedBy: {
-                type: job.kind,
-                value: job.value,
+                type:
+                    job.kind,
+                value:
+                    job.value,
             },
             scrapedAt:
                 isoNow(),
@@ -1691,15 +1947,19 @@ async function extractCurrentPage(
                 ),
             __detailKnown:
                 currentDetailKnown,
-            __detailKnownFields: [
-                ...currentKnownDetailFields,
-            ],
+            __detailKnownFields:
+                [
+                    ...currentKnownDetailFields,
+                ],
             __detailFetched:
-                detail.__detailFetched
+                detail
+                    .__detailFetched
                 === true,
         };
 
-        results.push(record);
+        results.push(
+            record,
+        );
     }
 
     return results;
@@ -1709,15 +1969,25 @@ async function getPaginationSnapshot(
     page,
 ) {
     const table =
-        await getProductTable(page)
-            .catch(() => null);
+        await getProductTable(
+            page,
+        )
+            .catch(
+                () => null,
+            );
 
     if (!table) {
         return {
             activePage: '',
             firstRow: '',
-            nextExists: false,
-            nextDisabled: true,
+            dataTablePage:
+                null,
+            dataTablePages:
+                null,
+            nextExists:
+                false,
+            nextDisabled:
+                true,
         };
     }
 
@@ -1725,7 +1995,9 @@ async function getPaginationSnapshot(
         (tableElement) => {
             const cleanText =
                 (value) =>
-                    String(value ?? '')
+                    String(
+                        value ?? '',
+                    )
                         .replace(
                             /\u00a0/g,
                             ' ',
@@ -1751,14 +2023,16 @@ async function getPaginationSnapshot(
                 || document;
 
             const active =
-                wrapper.querySelector(
-                    '.paginate_button.current, .pagination .active',
-                );
+                wrapper
+                    .querySelector(
+                        '.paginate_button.current, .pagination .active',
+                    );
 
             const next =
-                wrapper.querySelector(
-                    '.paginate_button.next, button[id$="_next"]',
-                );
+                wrapper
+                    .querySelector(
+                        '.paginate_button.next, button[id$="_next"]',
+                    );
 
             const firstRow =
                 tableElement
@@ -1766,21 +2040,101 @@ async function getPaginationSnapshot(
                         'tbody tr',
                     );
 
+            let dataTablePage =
+                null;
+
+            let dataTablePages =
+                null;
+
+            try {
+                const jq =
+                    window.jQuery
+                    || window.$;
+
+                if (
+                    jq
+                    && jq.fn
+                        ?.dataTable
+                        ?.isDataTable
+                    && jq.fn
+                        .dataTable
+                        .isDataTable(
+                            tableElement,
+                        )
+                ) {
+                    const instance =
+                        jq(
+                            tableElement,
+                        );
+
+                    const api =
+                        typeof instance
+                            .DataTable
+                            === 'function'
+                            ? instance
+                                .DataTable()
+                            : instance
+                                .dataTable()
+                                .api();
+
+                    const info =
+                        api
+                            .page
+                            .info();
+
+                    dataTablePage =
+                        Number.isFinite(
+                            info
+                                ?.page,
+                        )
+                            ? info.page
+                            : null;
+
+                    dataTablePages =
+                        Number.isFinite(
+                            info
+                                ?.pages,
+                        )
+                            ? info.pages
+                            : null;
+                }
+            } catch {
+                // Visual fallback remains available.
+            }
+
             const nextClass =
                 cleanText(
-                    next?.getAttribute(
-                        'class',
-                    ),
+                    next
+                        ?.getAttribute(
+                            'class',
+                        ),
+                );
+
+            const dataTableAtEnd =
+                (
+                    dataTablePage
+                        !== null
+                    && dataTablePages
+                        !== null
+                    && dataTablePages
+                        > 0
+                    && dataTablePage
+                        >= dataTablePages
+                            - 1
                 );
 
             const nextDisabled =
-                !next
-                || next.hasAttribute(
-                    'disabled',
-                )
-                || next.getAttribute(
-                    'aria-disabled',
-                ) === 'true'
+                dataTableAtEnd
+                || !next
+                || next
+                    .hasAttribute(
+                        'disabled',
+                    )
+                || next
+                    .getAttribute(
+                        'aria-disabled',
+                    )
+                    === 'true'
                 || nextClass
                     .split(' ')
                     .includes(
@@ -1798,23 +2152,342 @@ async function getPaginationSnapshot(
                         firstRow
                             ?.textContent,
                     ),
+                dataTablePage,
+                dataTablePages,
                 nextExists:
-                    Boolean(next),
+                    Boolean(
+                        next,
+                    ),
                 nextDisabled,
             };
         },
     );
 }
 
-async function triggerNextPage(page) {
+function paginationMoved(
+    before,
+    current,
+) {
+    return Boolean(
+        (
+            before.dataTablePage
+                !== null
+            && current.dataTablePage
+                !== null
+            && current.dataTablePage
+                !== before.dataTablePage
+        )
+        || (
+            before.activePage
+            && current.activePage
+            && current.activePage
+                !== before.activePage
+        )
+        || (
+            before.firstRow
+            && current.firstRow
+            && current.firstRow
+                !== before.firstRow
+        ),
+    );
+}
+
+async function getVisibleNextButton(
+    page,
+) {
     const table =
-        await getProductTable(page)
-            .catch(() => null);
+        await getProductTable(
+            page,
+        )
+            .catch(
+                () => null,
+            );
+
+    if (!table) {
+        return null;
+    }
+
+    const wrapper =
+        table.locator(
+            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " dataTables_wrapper ")][1]',
+        );
+
+    if (
+        await wrapper
+            .count()
+            .catch(
+                () => 0,
+            )
+    ) {
+        const localNext =
+            await visibleLocator(
+                wrapper.locator(
+                    '.paginate_button.next, button[id$="_next"]',
+                ),
+            )
+                .catch(
+                    () => null,
+                );
+
+        if (localNext) {
+            return localNext;
+        }
+    }
+
+    return visibleLocator(
+        page.locator(
+            '.paginate_button.next:visible, button[id$="_next"]:visible',
+        ),
+    )
+        .catch(
+            () => null,
+        );
+}
+
+async function triggerNextPageWithPlaywright(
+    page,
+) {
+    const next =
+        await getVisibleNextButton(
+            page,
+        );
+
+    if (!next) {
+        return {
+            triggered:
+                false,
+            reason:
+                'NEXT_BUTTON_NOT_FOUND',
+        };
+    }
+
+    const classNames =
+        clean(
+            await next
+                .getAttribute(
+                    'class',
+                ),
+        )
+            .split(' ')
+            .filter(
+                Boolean,
+            );
+
+    const disabled =
+        await next
+            .isDisabled()
+            .catch(
+                () => false,
+            )
+        || await next
+            .getAttribute(
+                'disabled',
+            )
+            !== null
+        || await next
+            .getAttribute(
+                'aria-disabled',
+            )
+            === 'true'
+        || classNames
+            .includes(
+                'disabled',
+            );
+
+    if (disabled) {
+        return {
+            triggered:
+                false,
+            reason:
+                'NEXT_BUTTON_DISABLED',
+        };
+    }
+
+    try {
+        await next.click({
+            timeout:
+                3000,
+        });
+
+        return {
+            triggered:
+                true,
+            reason:
+                'PLAYWRIGHT_CLICK',
+        };
+    } catch (error) {
+        return {
+            triggered:
+                false,
+            reason:
+                'PLAYWRIGHT_CLICK_FAILED',
+            error:
+                error
+                    ?.message
+                || String(
+                    error,
+                ),
+        };
+    }
+}
+
+async function triggerNextPageWithDataTablesApi(
+    page,
+) {
+    const table =
+        await getProductTable(
+            page,
+        )
+            .catch(
+                () => null,
+            );
 
     if (!table) {
         return {
-            clicked: false,
-            disabled: true,
+            triggered:
+                false,
+            available:
+                false,
+            reason:
+                'PRODUCT_TABLE_NOT_FOUND',
+        };
+    }
+
+    return table.evaluate(
+        (tableElement) => {
+            try {
+                const jq =
+                    window.jQuery
+                    || window.$;
+
+                if (
+                    !jq
+                    || !jq.fn
+                        ?.dataTable
+                        ?.isDataTable
+                    || !jq.fn
+                        .dataTable
+                        .isDataTable(
+                            tableElement,
+                        )
+                ) {
+                    return {
+                        triggered:
+                            false,
+                        available:
+                            false,
+                        reason:
+                            'DATATABLES_API_UNAVAILABLE',
+                    };
+                }
+
+                const instance =
+                    jq(
+                        tableElement,
+                    );
+
+                const api =
+                    typeof instance
+                        .DataTable
+                        === 'function'
+                        ? instance
+                            .DataTable()
+                        : instance
+                            .dataTable()
+                            .api();
+
+                const info =
+                    api
+                        .page
+                        .info();
+
+                if (
+                    Number.isFinite(
+                        info
+                            ?.page,
+                    )
+                    && Number.isFinite(
+                        info
+                            ?.pages,
+                    )
+                    && info.pages
+                        > 0
+                    && info.page
+                        >= info.pages
+                            - 1
+                ) {
+                    return {
+                        triggered:
+                            false,
+                        available:
+                            true,
+                        atEnd:
+                            true,
+                        reason:
+                            'DATATABLES_AT_END',
+                    };
+                }
+
+                api
+                    .page(
+                        'next',
+                    )
+                    .draw(
+                        'page',
+                    );
+
+                return {
+                    triggered:
+                        true,
+                    available:
+                        true,
+                    atEnd:
+                        false,
+                    pageBefore:
+                        Number.isFinite(
+                            info
+                                ?.page,
+                        )
+                            ? info.page
+                            : null,
+                    reason:
+                        'DATATABLES_API',
+                };
+            } catch (error) {
+                return {
+                    triggered:
+                        false,
+                    available:
+                        true,
+                    reason:
+                        'DATATABLES_API_FAILED',
+                    error:
+                        error
+                            ?.message
+                        || String(
+                            error,
+                        ),
+                };
+            }
+        },
+    );
+}
+
+async function triggerNextPageWithDomFallback(
+    page,
+) {
+    const table =
+        await getProductTable(
+            page,
+        )
+            .catch(
+                () => null,
+            );
+
+    if (!table) {
+        return {
+            triggered:
+                false,
             reason:
                 'PRODUCT_TABLE_NOT_FOUND',
         };
@@ -1837,14 +2510,15 @@ async function triggerNextPage(page) {
                 || document;
 
             const next =
-                wrapper.querySelector(
-                    '.paginate_button.next, button[id$="_next"]',
-                );
+                wrapper
+                    .querySelector(
+                        '.paginate_button.next, button[id$="_next"]',
+                    );
 
             if (!next) {
                 return {
-                    clicked: false,
-                    disabled: true,
+                    triggered:
+                        false,
                     reason:
                         'NEXT_BUTTON_NOT_FOUND',
                 };
@@ -1852,29 +2526,36 @@ async function triggerNextPage(page) {
 
             const classNames =
                 String(
-                    next.getAttribute(
-                        'class',
-                    )
+                    next
+                        .getAttribute(
+                            'class',
+                        )
                     || '',
                 )
                     .split(/\s+/)
-                    .filter(Boolean);
+                    .filter(
+                        Boolean,
+                    );
 
             const disabled =
-                next.hasAttribute(
-                    'disabled',
-                )
-                || next.getAttribute(
-                    'aria-disabled',
-                ) === 'true'
-                || classNames.includes(
-                    'disabled',
-                );
+                next
+                    .hasAttribute(
+                        'disabled',
+                    )
+                || next
+                    .getAttribute(
+                        'aria-disabled',
+                    )
+                    === 'true'
+                || classNames
+                    .includes(
+                        'disabled',
+                    );
 
             if (disabled) {
                 return {
-                    clicked: false,
-                    disabled: true,
+                    triggered:
+                        false,
                     reason:
                         'NEXT_BUTTON_DISABLED',
                 };
@@ -1883,10 +2564,10 @@ async function triggerNextPage(page) {
             next.click();
 
             return {
-                clicked: true,
-                disabled: false,
+                triggered:
+                    true,
                 reason:
-                    'CLICKED',
+                    'DOM_CLICK',
             };
         },
     );
@@ -1895,7 +2576,7 @@ async function triggerNextPage(page) {
 async function waitForPaginationMove(
     page,
     before,
-    timeoutMs = 4500,
+    timeoutMs = 4000,
 ) {
     return page
         .waitForFunction(
@@ -1930,42 +2611,44 @@ async function waitForPaginationMove(
                             ),
                         );
 
-                const tables = [
-                    ...document
-                        .querySelectorAll(
-                            'table',
-                        ),
-                ].filter(
-                    (table) => {
-                        if (
-                            !isVisible(
-                                table,
-                            )
-                        ) {
-                            return false;
-                        }
-
-                        const headers =
-                            cleanText(
-                                table
-                                    .querySelector(
-                                        'thead',
+                const tables =
+                    [
+                        ...document
+                            .querySelectorAll(
+                                'table',
+                            ),
+                    ]
+                        .filter(
+                            (table) => {
+                                if (
+                                    !isVisible(
+                                        table,
                                     )
-                                    ?.textContent,
-                            );
+                                ) {
+                                    return false;
+                                }
 
-                        return (
-                            /Nomor Registrasi/i
-                                .test(
-                                    headers,
-                                )
-                            && /Nama Produk/i
-                                .test(
-                                    headers,
-                                )
+                                const headers =
+                                    cleanText(
+                                        table
+                                            .querySelector(
+                                                'thead',
+                                            )
+                                            ?.textContent,
+                                    );
+
+                                return (
+                                    /Nomor Registrasi/i
+                                        .test(
+                                            headers,
+                                        )
+                                    && /Nama Produk/i
+                                        .test(
+                                            headers,
+                                        )
+                                );
+                            },
                         );
-                    },
-                );
 
                 const table =
                     tables.find(
@@ -1974,7 +2657,8 @@ async function waitForPaginationMove(
                                 .querySelectorAll(
                                     'tbody tr',
                                 )
-                                .length > 0,
+                                .length
+                                > 0,
                     )
                     || tables[0];
 
@@ -1996,14 +2680,16 @@ async function waitForPaginationMove(
                     || document;
 
                 const active =
-                    wrapper.querySelector(
-                        '.paginate_button.current, .pagination .active',
-                    );
+                    wrapper
+                        .querySelector(
+                            '.paginate_button.current, .pagination .active',
+                        );
 
                 const firstRow =
-                    table.querySelector(
-                        'tbody tr',
-                    );
+                    table
+                        .querySelector(
+                            'tbody tr',
+                        );
 
                 const currentActivePage =
                     cleanText(
@@ -2017,40 +2703,125 @@ async function waitForPaginationMove(
                             ?.textContent,
                     );
 
-                const overlayVisible =
-                    [
-                        ...document
-                            .querySelectorAll(
-                                '.blockUI.blockOverlay',
-                            ),
-                    ].some(isVisible);
+                let currentDataTablePage =
+                    null;
 
-                if (overlayVisible) {
-                    return false;
+                try {
+                    const jq =
+                        window.jQuery
+                        || window.$;
+
+                    if (
+                        jq
+                        && jq.fn
+                            ?.dataTable
+                            ?.isDataTable
+                        && jq.fn
+                            .dataTable
+                            .isDataTable(
+                                table,
+                            )
+                    ) {
+                        const instance =
+                            jq(table);
+
+                        const api =
+                            typeof instance
+                                .DataTable
+                                === 'function'
+                                ? instance
+                                    .DataTable()
+                                : instance
+                                    .dataTable()
+                                    .api();
+
+                        const info =
+                            api
+                                .page
+                                .info();
+
+                        currentDataTablePage =
+                            Number.isFinite(
+                                info
+                                    ?.page,
+                            )
+                                ? info.page
+                                : null;
+                    }
+                } catch {
+                    // Fall through to visual signals.
                 }
 
                 return (
                     (
-                        previous.activePage
-                        && currentActivePage
-                        && currentActivePage
-                            !== previous.activePage
+                        previous
+                            .dataTablePage
+                            !== null
+                        && currentDataTablePage
+                            !== null
+                        && currentDataTablePage
+                            !== previous
+                                .dataTablePage
                     )
                     || (
-                        previous.firstRow
+                        previous
+                            .activePage
+                        && currentActivePage
+                        && currentActivePage
+                            !== previous
+                                .activePage
+                    )
+                    || (
+                        previous
+                            .firstRow
                         && currentFirstRow
                         && currentFirstRow
-                            !== previous.firstRow
+                            !== previous
+                                .firstRow
                     )
                 );
             },
             before,
             {
-                timeout: timeoutMs,
+                timeout:
+                    timeoutMs,
             },
         )
-        .then(() => true)
-        .catch(() => false);
+        .then(
+            () => true,
+        )
+        .catch(
+            () => false,
+        );
+}
+
+async function settleAfterPagination(
+    page,
+    delay,
+    crawlerLog,
+) {
+    const idle =
+        await waitForBpomUiIdle(
+            page,
+            5000,
+        );
+
+    if (!idle) {
+        crawlerLog.debug(
+            'BPOM pagination moved, but the UI still reports a transient processing state.',
+        );
+    }
+
+    await page
+        .waitForTimeout(
+            Math.max(
+                100,
+                Math.min(
+                    delay,
+                    300,
+                ),
+            ),
+        );
 }
 
 async function clickNext(
@@ -2074,159 +2845,287 @@ async function clickNext(
         };
     }
 
-    const maxAttempts = 2;
-    let lastError = null;
-
-    for (
-        let attempt = 1;
-        attempt <= maxAttempts;
-        attempt++
-    ) {
-        if (attempt > 1) {
-            paginationStats
-                .localRetries++;
-
-            await page
-                .waitForTimeout(250);
-        }
-
-        const cleanup =
-            await cleanupDetailUi(
-                page,
-                crawlerLog,
-                {
-                    force: true,
-                },
-            );
-
-        if (
-            cleanup.forcedCleanup
-        ) {
-            paginationStats
-                .uiCleanups++;
-        }
-
-        const current =
-            await getPaginationSnapshot(
-                page,
-            );
-
-        if (
-            (
-                before.activePage
-                && current.activePage
-                && current.activePage
-                    !== before.activePage
-            )
-            || (
-                before.firstRow
-                && current.firstRow
-                && current.firstRow
-                    !== before.firstRow
-            )
-        ) {
-            if (attempt > 1) {
-                paginationStats
-                    .recoveries++;
-            }
-
-            return {
-                status: 'moved',
-                recovered:
-                    attempt > 1,
-            };
-        }
-
-        if (
-            !current.nextExists
-            || current.nextDisabled
-        ) {
-            lastError =
-                new Error(
-                    'BPOM next-page button became unavailable before pagination completed.',
-                );
-        } else {
-            try {
-                const triggered =
-                    await triggerNextPage(
-                        page,
-                    );
-
-                if (
-                    !triggered.clicked
-                ) {
-                    lastError =
-                        new Error(
-                            `BPOM next-page trigger failed: ${triggered.reason}`,
-                        );
-                } else {
-                    const moved =
-                        await waitForPaginationMove(
-                            page,
-                            before,
-                            4500,
-                        );
-
-                    if (moved) {
-                        await page
-                            .waitForTimeout(
-                                Math.max(
-                                    100,
-                                    Math.min(
-                                        delay,
-                                        350,
-                                    ),
-                                ),
-                            );
-
-                        if (
-                            attempt > 1
-                        ) {
-                            paginationStats
-                                .recoveries++;
-                        }
-
-                        return {
-                            status:
-                                'moved',
-                            recovered:
-                                attempt > 1,
-                        };
-                    }
-
-                    lastError =
-                        new Error(
-                            'BPOM pagination did not move within 4500 ms.',
-                        );
-                }
-            } catch (error) {
-                lastError = error;
-            }
-        }
-
-        crawlerLog.warning(
-            'BPOM pagination local attempt failed; recovering UI before retry.',
+    const cleanup =
+        await cleanupDetailUi(
+            page,
+            crawlerLog,
             {
-                attempt,
-                maxAttempts,
-                error:
-                    lastError?.message
-                    || String(
-                        lastError,
-                    ),
+                force: true,
             },
+        );
+
+    if (
+        cleanup
+            .forcedCleanup
+    ) {
+        paginationStats
+            .uiCleanups++;
+    }
+
+    const initialIdle =
+        await waitForBpomUiIdle(
+            page,
+            5000,
+        );
+
+    if (!initialIdle) {
+        crawlerLog.warning(
+            'BPOM UI was still busy before pagination; trying pagination with recovery safeguards.',
         );
     }
 
-    paginationStats.failures++;
+    const currentBeforeClick =
+        await getPaginationSnapshot(
+            page,
+        );
+
+    if (
+        paginationMoved(
+            before,
+            currentBeforeClick,
+        )
+    ) {
+        return {
+            status: 'moved',
+            recovered: true,
+        };
+    }
+
+    let lastError = null;
+
+    const normal =
+        await triggerNextPageWithPlaywright(
+            page,
+        );
+
+    if (
+        normal.triggered
+    ) {
+        const moved =
+            await waitForPaginationMove(
+                page,
+                before,
+                3500,
+            );
+
+        if (moved) {
+            await settleAfterPagination(
+                page,
+                delay,
+                crawlerLog,
+            );
+
+            return {
+                status:
+                    'moved',
+                recovered:
+                    false,
+            };
+        }
+
+        lastError =
+            new Error(
+                'BPOM pagination did not move after the normal click.',
+            );
+    } else {
+        lastError =
+            new Error(
+                `BPOM normal pagination click failed: ${normal.reason}`
+                + (
+                    normal.error
+                        ? ` - ${normal.error}`
+                        : ''
+                ),
+            );
+    }
+
+    crawlerLog.warning(
+        'BPOM normal pagination failed; trying DataTables API recovery.',
+        {
+            error:
+                lastError
+                    .message,
+        },
+    );
+
+    paginationStats
+        .localRetries++;
+
+    paginationStats
+        .apiFallbacks++;
+
+    const afterNormal =
+        await getPaginationSnapshot(
+            page,
+        );
+
+    if (
+        paginationMoved(
+            before,
+            afterNormal,
+        )
+    ) {
+        paginationStats
+            .recoveries++;
+
+        await settleAfterPagination(
+            page,
+            delay,
+            crawlerLog,
+        );
+
+        return {
+            status:
+                'moved',
+            recovered:
+                true,
+        };
+    }
+
+    await waitForBpomUiIdle(
+        page,
+        3500,
+    );
+
+    const apiResult =
+        await triggerNextPageWithDataTablesApi(
+            page,
+        );
+
+    if (
+        apiResult.atEnd
+    ) {
+        return {
+            status:
+                'end',
+            recovered:
+                true,
+        };
+    }
+
+    if (
+        apiResult.triggered
+    ) {
+        const moved =
+            await waitForPaginationMove(
+                page,
+                before,
+                4500,
+            );
+
+        if (moved) {
+            paginationStats
+                .recoveries++;
+
+            await settleAfterPagination(
+                page,
+                delay,
+                crawlerLog,
+            );
+
+            return {
+                status:
+                    'moved',
+                recovered:
+                    true,
+            };
+        }
+
+        lastError =
+            new Error(
+                'BPOM pagination did not move after DataTables API recovery.',
+            );
+    } else {
+        lastError =
+            new Error(
+                `BPOM DataTables API recovery failed: ${apiResult.reason}`
+                + (
+                    apiResult.error
+                        ? ` - ${apiResult.error}`
+                        : ''
+                ),
+            );
+    }
+
+    if (
+        !apiResult.available
+    ) {
+        paginationStats
+            .localRetries++;
+
+        paginationStats
+            .domFallbacks++;
+
+        const domResult =
+            await triggerNextPageWithDomFallback(
+                page,
+            );
+
+        if (
+            domResult.triggered
+        ) {
+            const moved =
+                await waitForPaginationMove(
+                    page,
+                    before,
+                    3500,
+                );
+
+            if (moved) {
+                paginationStats
+                    .recoveries++;
+
+                await settleAfterPagination(
+                    page,
+                    delay,
+                    crawlerLog,
+                );
+
+                return {
+                    status:
+                        'moved',
+                    recovered:
+                        true,
+                };
+            }
+
+            lastError =
+                new Error(
+                    'BPOM pagination did not move after DOM fallback.',
+                );
+        } else {
+            lastError =
+                new Error(
+                    `BPOM DOM pagination fallback failed: ${domResult.reason}`,
+                );
+        }
+    }
+
+    paginationStats
+        .failures++;
+
+    crawlerLog.warning(
+        'BPOM pagination recovery exhausted.',
+        {
+            error:
+                lastError
+                    ?.message
+                || String(
+                    lastError
+                    || '',
+                ),
+        },
+    );
 
     return {
         status: 'failed',
         recovered: false,
         error:
-            lastError?.message
+            lastError
+                ?.message
             || String(
-                lastError || '',
+                lastError
+                || '',
             ),
     };
 }
@@ -2236,11 +3135,14 @@ await Actor.main(async () => {
         isoNow();
 
     const input =
-        await Actor.getInput()
+        await Actor
+            .getInput()
         ?? {};
 
     const jobs =
-        buildJobs(input);
+        buildJobs(
+            input,
+        );
 
     const watchSignature =
         buildWatchSignature(
@@ -2300,7 +3202,8 @@ await Actor.main(async () => {
         !Number.isInteger(
             baselineWarmupRuns,
         )
-        || baselineWarmupRuns < 1
+        || baselineWarmupRuns
+            < 1
     ) {
         throw new Error(
             'baselineWarmupRuns must be an integer >= 1.',
@@ -2311,7 +3214,8 @@ await Actor.main(async () => {
         !Number.isInteger(
             newProductWindowDays,
         )
-        || newProductWindowDays < 1
+        || newProductWindowDays
+            < 1
     ) {
         throw new Error(
             'newProductWindowDays must be an integer >= 1.',
@@ -2322,7 +3226,8 @@ await Actor.main(async () => {
         !Number.isInteger(
             detailMaxAgeDays,
         )
-        || detailMaxAgeDays < 1
+        || detailMaxAgeDays
+            < 1
     ) {
         throw new Error(
             'detailMaxAgeDays must be an integer >= 1.',
@@ -2333,7 +3238,8 @@ await Actor.main(async () => {
         !Number.isInteger(
             detailFetchLimitPerRun,
         )
-        || detailFetchLimitPerRun < 0
+        || detailFetchLimitPerRun
+            < 0
     ) {
         throw new Error(
             'detailFetchLimitPerRun must be an integer >= 0.',
@@ -2342,7 +3248,8 @@ await Actor.main(async () => {
 
     const detailStrategy =
         clean(
-            input.detailStrategy
+            input
+                .detailStrategy
             || 'changesOnly',
         );
 
@@ -2356,7 +3263,9 @@ await Actor.main(async () => {
 
     if (
         !allowedDetailStrategies
-            .has(detailStrategy)
+            .has(
+                detailStrategy,
+            )
     ) {
         throw new Error(
             `Invalid detailStrategy: ${detailStrategy}`,
@@ -2378,7 +3287,9 @@ await Actor.main(async () => {
         );
 
     const debug =
-        Boolean(input.debug);
+        Boolean(
+            input.debug,
+        );
 
     const itemLimit =
         maxItemsPerQuery > 0
@@ -2614,6 +3525,8 @@ await Actor.main(async () => {
                     recoveries: 0,
                     failures: 0,
                     uiCleanups: 0,
+                    apiFallbacks: 0,
+                    domFallbacks: 0,
                 };
 
                 while (
@@ -2666,20 +3579,28 @@ await Actor.main(async () => {
 
                         if (
                             seenRegistrationNumbers
-                                .has(key)
+                                .has(
+                                    key,
+                                )
                         ) {
                             duplicateRows++;
 
                             duplicateRegistrationNumbers
-                                .add(key);
+                                .add(
+                                    key,
+                                );
                         } else {
                             seenRegistrationNumbers
-                                .add(key);
+                                .add(
+                                    key,
+                                );
                         }
 
                         const existing =
                             collected
-                                .get(key);
+                                .get(
+                                    key,
+                                );
 
                         if (!existing) {
                             collected
@@ -2689,11 +3610,10 @@ await Actor.main(async () => {
                                 );
                         } else {
                             const matches =
-                                Array
-                                    .isArray(
-                                        existing
-                                            .matches,
-                                    )
+                                Array.isArray(
+                                    existing
+                                        .matches,
+                                )
                                     ? existing
                                         .matches
                                     : [
@@ -2741,7 +3661,7 @@ await Actor.main(async () => {
 
                         if (
                             queryCount
-                                >= itemLimit
+                            >= itemLimit
                         ) {
                             break;
                         }
@@ -2749,7 +3669,7 @@ await Actor.main(async () => {
 
                     if (
                         queryCount
-                            >= itemLimit
+                        >= itemLimit
                     ) {
                         stopReason =
                             'item_limit';
@@ -2759,7 +3679,7 @@ await Actor.main(async () => {
 
                     if (
                         pageNumber
-                            >= maxPagesPerQuery
+                        >= maxPagesPerQuery
                     ) {
                         stopReason =
                             'page_limit';
@@ -2839,10 +3759,11 @@ await Actor.main(async () => {
                     duplicateRegistrationNumbers:
                         [
                             ...duplicateRegistrationNumbers,
-                        ].slice(
-                            0,
-                            100,
-                        ),
+                        ]
+                            .slice(
+                                0,
+                                100,
+                            ),
                     pagesVisited:
                         pageNumber,
                     coverageComplete,
@@ -2859,6 +3780,12 @@ await Actor.main(async () => {
                     paginationUiCleanups:
                         paginationStats
                             .uiCleanups,
+                    paginationApiFallbacks:
+                        paginationStats
+                            .apiFallbacks,
+                    paginationDomFallbacks:
+                        paginationStats
+                            .domFallbacks,
                 };
 
                 querySummaries
@@ -2889,8 +3816,11 @@ await Actor.main(async () => {
                 failedJobs.push({
                     job,
                     error:
-                        error?.message
-                        || String(error),
+                        error
+                            ?.message
+                        || String(
+                            error,
+                        ),
                 });
 
                 querySummaries
@@ -2959,7 +3889,8 @@ await Actor.main(async () => {
         );
 
     const overallCoverageComplete =
-        failedJobs.length === 0
+        failedJobs.length
+            === 0
         && querySummaryList
             .every(
                 (query) =>
@@ -2978,8 +3909,11 @@ await Actor.main(async () => {
             )
             .length;
 
-    let baselineReset = false;
-    let baselineResetReason = '';
+    let baselineReset =
+        false;
+
+    let baselineResetReason =
+        '';
 
     let previousState =
         rawPreviousState
@@ -2988,7 +3922,8 @@ await Actor.main(async () => {
                 SNAPSHOT_VERSION,
             watchSignature,
             successfulRuns: 0,
-            baselineReady: false,
+            baselineReady:
+                false,
             records: {},
         };
 
@@ -3000,7 +3935,9 @@ await Actor.main(async () => {
             .watchSignature
             !== watchSignature
     ) {
-        baselineReset = true;
+        baselineReset =
+            true;
+
         baselineResetReason =
             'WATCHLIST_CHANGED';
 
@@ -3009,7 +3946,8 @@ await Actor.main(async () => {
                 SNAPSHOT_VERSION,
             watchSignature,
             successfulRuns: 0,
-            baselineReady: false,
+            baselineReady:
+                false,
             records: {},
         };
 
@@ -3052,7 +3990,8 @@ await Actor.main(async () => {
 
     if (
         !baselineStartedAtBefore
-        && successfulRunsBefore > 0
+        && successfulRunsBefore
+            > 0
     ) {
         baselineStartedAtBefore =
             earliestFirstSeenAt(
@@ -3107,8 +4046,11 @@ await Actor.main(async () => {
     let enrichedCount = 0;
     let snapshotCount = 0;
     let emittedCount = 0;
+    let suppressedOperationalRecords = 0;
     let reappearedCount = 0;
     let firstSeenCount = 0;
+
+    const pendingOutputRecords = [];
 
     const newCandidates = [];
     const discoveredCandidates = [];
@@ -3169,20 +4111,11 @@ await Actor.main(async () => {
             ...internalRecord,
         };
 
-        delete record
-            .__basicHash;
-
-        delete record
-            .__detailHash;
-
-        delete record
-            .__detailKnown;
-
-        delete record
-            .__detailKnownFields;
-
-        delete record
-            .__detailFetched;
+        delete record.__basicHash;
+        delete record.__detailHash;
+        delete record.__detailKnown;
+        delete record.__detailKnownFields;
+        delete record.__detailFetched;
 
         record.registrant =
             sanitizeRegistrant(
@@ -3203,7 +4136,8 @@ await Actor.main(async () => {
             previousRecords[id];
 
         const previousRecord =
-            previousEntry?.record
+            previousEntry
+                ?.record
                 ? canonicalizeLegacyRecord(
                     previousEntry
                         .record,
@@ -3461,25 +4395,27 @@ await Actor.main(async () => {
         }
 
         if (
-            eventType === 'NEW'
-            && newCandidates.length
-                < 100
+            eventType
+            === 'NEW'
+            && newCandidates
+                .length < 100
         ) {
-            newCandidates.push({
-                registrationNumber:
-                    id,
-                issuedDate:
-                    record
-                        .issuedDate,
-                issuedAgeDays:
-                    ageDays,
-                classificationReason,
-            });
+            newCandidates
+                .push({
+                    registrationNumber:
+                        id,
+                    issuedDate:
+                        record
+                            .issuedDate,
+                    issuedAgeDays:
+                        ageDays,
+                    classificationReason,
+                });
         }
 
         if (
             eventType
-                === 'DISCOVERED'
+            === 'DISCOVERED'
             && discoveredCandidates
                 .length < 100
         ) {
@@ -3498,7 +4434,7 @@ await Actor.main(async () => {
 
         if (
             eventType
-                === 'CHANGED'
+            === 'CHANGED'
             && changedCandidates
                 .length < 100
         ) {
@@ -3514,7 +4450,8 @@ await Actor.main(async () => {
         }
 
         if (
-            enrichedFields.length > 0
+            enrichedFields
+                .length > 0
             && enrichedCandidates
                 .length < 100
         ) {
@@ -3553,12 +4490,25 @@ await Actor.main(async () => {
                 eventType,
             )
         ) {
-            await Actor
-                .pushData(
-                    output,
+            const isOperationalEvent =
+                (
+                    eventType
+                        === 'NEW'
+                    || eventType
+                        === 'CHANGED'
                 );
 
-            emittedCount++;
+            if (
+                !overallCoverageComplete
+                && isOperationalEvent
+            ) {
+                suppressedOperationalRecords++;
+            } else {
+                pendingOutputRecords
+                    .push(
+                        output,
+                    );
+            }
         }
 
         const fallbackFirstSeenAt =
@@ -3584,9 +4534,10 @@ await Actor.main(async () => {
                 currentDetailHash,
             detailKnown:
                 currentDetailKnown,
-            detailKnownFields: [
-                ...currentKnownDetailFields,
-            ],
+            detailKnownFields:
+                [
+                    ...currentKnownDetailFields,
+                ],
             lastDetailFetchedAt,
             record,
             firstSeenAt:
@@ -3598,10 +4549,23 @@ await Actor.main(async () => {
             observationCount:
                 previousObservationCount(
                     previousEntry,
-                ) + 1,
+                )
+                + 1,
             consecutiveMisses:
                 0,
         };
+    }
+
+    for (
+        const output
+        of pendingOutputRecords
+    ) {
+        await Actor
+            .pushData(
+                output,
+            );
+
+        emittedCount++;
     }
 
     const previousIds =
@@ -3626,7 +4590,9 @@ await Actor.main(async () => {
                 .filter(
                     (id) =>
                         !observedIds
-                            .has(id),
+                            .has(
+                                id,
+                            ),
                 )
             : [];
 
@@ -3655,7 +4621,10 @@ await Actor.main(async () => {
             of previousIds
         ) {
             if (
-                observedIds.has(id)
+                observedIds
+                    .has(
+                        id,
+                    )
             ) {
                 continue;
             }
@@ -3751,7 +4720,9 @@ await Actor.main(async () => {
             isoNow();
     }
 
-    if (snapshotCanUpdate) {
+    if (
+        snapshotCanUpdate
+    ) {
         await stateStore
             .setValue(
                 `SNAPSHOT_${stateKey}`,
@@ -3797,103 +4768,142 @@ await Actor.main(async () => {
     }
 
     const totalRawRowsCollected =
-        querySummaryList.reduce(
-            (
-                total,
-                query,
-            ) =>
-                total
-                + (
-                    query
-                        ?.rawRowsCollected
-                    ?? 0
-                ),
-            0,
-        );
+        querySummaryList
+            .reduce(
+                (
+                    total,
+                    query,
+                ) =>
+                    total
+                    + (
+                        query
+                            ?.rawRowsCollected
+                        ?? 0
+                    ),
+                0,
+            );
 
     const totalDuplicateRows =
-        querySummaryList.reduce(
-            (
-                total,
-                query,
-            ) =>
-                total
-                + (
-                    query
-                        ?.duplicateRows
-                    ?? 0
-                ),
-            0,
-        );
+        querySummaryList
+            .reduce(
+                (
+                    total,
+                    query,
+                ) =>
+                    total
+                    + (
+                        query
+                            ?.duplicateRows
+                        ?? 0
+                    ),
+                0,
+            );
 
     const totalPaginationLocalRetries =
-        querySummaryList.reduce(
-            (
-                total,
-                query,
-            ) =>
-                total
-                + (
-                    query
-                        ?.paginationLocalRetries
-                    ?? 0
-                ),
-            0,
-        );
+        querySummaryList
+            .reduce(
+                (
+                    total,
+                    query,
+                ) =>
+                    total
+                    + (
+                        query
+                            ?.paginationLocalRetries
+                        ?? 0
+                    ),
+                0,
+            );
 
     const totalPaginationRecoveries =
-        querySummaryList.reduce(
-            (
-                total,
-                query,
-            ) =>
-                total
-                + (
-                    query
-                        ?.paginationRecoveries
-                    ?? 0
-                ),
-            0,
-        );
+        querySummaryList
+            .reduce(
+                (
+                    total,
+                    query,
+                ) =>
+                    total
+                    + (
+                        query
+                            ?.paginationRecoveries
+                        ?? 0
+                    ),
+                0,
+            );
 
     const totalPaginationFailures =
-        querySummaryList.reduce(
-            (
-                total,
-                query,
-            ) =>
-                total
-                + (
-                    query
-                        ?.paginationFailures
-                    ?? 0
-                ),
-            0,
-        );
+        querySummaryList
+            .reduce(
+                (
+                    total,
+                    query,
+                ) =>
+                    total
+                    + (
+                        query
+                            ?.paginationFailures
+                        ?? 0
+                    ),
+                0,
+            );
 
     const totalPaginationUiCleanups =
-        querySummaryList.reduce(
-            (
-                total,
-                query,
-            ) =>
-                total
-                + (
-                    query
-                        ?.paginationUiCleanups
-                    ?? 0
-                ),
-            0,
-        );
+        querySummaryList
+            .reduce(
+                (
+                    total,
+                    query,
+                ) =>
+                    total
+                    + (
+                        query
+                            ?.paginationUiCleanups
+                        ?? 0
+                    ),
+                0,
+            );
+
+    const totalPaginationApiFallbacks =
+        querySummaryList
+            .reduce(
+                (
+                    total,
+                    query,
+                ) =>
+                    total
+                    + (
+                        query
+                            ?.paginationApiFallbacks
+                        ?? 0
+                    ),
+                0,
+            );
+
+    const totalPaginationDomFallbacks =
+        querySummaryList
+            .reduce(
+                (
+                    total,
+                    query,
+                ) =>
+                    total
+                    + (
+                        query
+                            ?.paginationDomFallbacks
+                        ?? 0
+                    ),
+                0,
+            );
 
     const uniqueDuplicateRegistrationNumbers =
         new Set(
-            querySummaryList.flatMap(
-                (query) =>
-                    query
-                        ?.duplicateRegistrationNumbers
-                    ?? [],
-            ),
+            querySummaryList
+                .flatMap(
+                    (query) =>
+                        query
+                            ?.duplicateRegistrationNumbers
+                        ?? [],
+                ),
         );
 
     const missingDetails =
@@ -3902,24 +4912,26 @@ await Actor.main(async () => {
                 0,
                 100,
             )
-            .map((id) => {
-                const entry =
-                    nextRecords[id]
-                    || previousRecords[id];
+            .map(
+                (id) => {
+                    const entry =
+                        nextRecords[id]
+                        || previousRecords[id];
 
-                return {
-                    registrationNumber:
-                        id,
-                    consecutiveMisses:
-                        entry
-                            ?.consecutiveMisses
-                        ?? 0,
-                    lastSeenAt:
-                        entry
-                            ?.lastSeenAt
-                        || '',
-                };
-            });
+                    return {
+                        registrationNumber:
+                            id,
+                        consecutiveMisses:
+                            entry
+                                ?.consecutiveMisses
+                            ?? 0,
+                        lastSeenAt:
+                            entry
+                                ?.lastSeenAt
+                            || '',
+                    };
+                },
+            );
 
     const persistedSnapshotProducts =
         snapshotCanUpdate
@@ -3992,19 +5004,26 @@ await Actor.main(async () => {
             detailMaxAgeDays,
             detailFetchLimitPerRun,
             detailFetches:
-                detailStats.requested,
+                detailStats
+                    .requested,
             detailFetchSucceeded:
-                detailStats.succeeded,
+                detailStats
+                    .succeeded,
             detailFetchFailed:
-                detailStats.failed,
+                detailStats
+                    .failed,
             detailLocalRetries:
-                detailStats.localRetries,
+                detailStats
+                    .localRetries,
             detailBudgetSkips:
-                detailStats.budgetSkipped,
+                detailStats
+                    .budgetSkipped,
             detailFetchReasons:
-                detailStats.byReason,
+                detailStats
+                    .byReason,
             detailSkips:
-                detailStats.skipped,
+                detailStats
+                    .skipped,
             paginationLocalRetries:
                 totalPaginationLocalRetries,
             paginationRecoveries:
@@ -4013,6 +5032,10 @@ await Actor.main(async () => {
                 totalPaginationFailures,
             paginationUiCleanups:
                 totalPaginationUiCleanups,
+            paginationApiFallbacks:
+                totalPaginationApiFallbacks,
+            paginationDomFallbacks:
+                totalPaginationDomFallbacks,
             rawRowsCollected:
                 totalRawRowsCollected,
             observedThisRun:
@@ -4047,6 +5070,7 @@ await Actor.main(async () => {
                 snapshotCount,
             emittedRecords:
                 emittedCount,
+            suppressedOperationalRecords,
             possiblyMissingProducts:
                 possiblyMissing.length,
             reappearedProducts:
@@ -4057,10 +5081,11 @@ await Actor.main(async () => {
             querySummaryList,
 
         possiblyMissingRegistrationNumbers:
-            possiblyMissing.slice(
-                0,
-                100,
-            ),
+            possiblyMissing
+                .slice(
+                    0,
+                    100,
+                ),
 
         possiblyMissingDetails:
             missingDetails,
@@ -4080,6 +5105,19 @@ await Actor.main(async () => {
         baselineResetReason,
         snapshotUpdated:
             snapshotCanUpdate,
+
+        qualityGatePassed:
+            !detectChanges
+            || overallCoverageComplete,
+
+        qualityGateReason:
+            (
+                detectChanges
+                && !overallCoverageComplete
+            )
+                ? 'INCOMPLETE_MONITORING_COVERAGE'
+                : '',
+
         stateStoreName,
         stateKey,
         watchSignature,
@@ -4092,6 +5130,27 @@ await Actor.main(async () => {
             'OUTPUT',
             summary,
         );
+
+    if (
+        detectChanges
+        && !overallCoverageComplete
+    ) {
+        log.error(
+            'Run failed monitoring quality gate because full BPOM coverage was not achieved.',
+            {
+                incompleteQueries,
+                failedQueries:
+                    failedJobs.length,
+                snapshotUpdated:
+                    snapshotCanUpdate,
+                suppressedOperationalRecords,
+            },
+        );
+
+        throw new Error(
+            `Incomplete BPOM monitoring coverage: ${incompleteQueries} query(s) did not reach a natural end.`,
+        );
+    }
 
     log.info(
         'Run finished.',
