@@ -4,7 +4,7 @@ import { PlaywrightCrawler } from 'crawlee';
 
 const BASE_URL = 'https://cekbpom.pom.go.id/produk-kosmetika';
 const SNAPSHOT_VERSION = 7;
-const ACTOR_VERSION = '0.2.6-r3';
+const ACTOR_VERSION = '0.2.6-r3-teams1';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const LISTING_FIELDS = [
@@ -500,6 +500,883 @@ function shouldEmit(mode, eventType) {
     }
 
     return true;
+}
+
+const TEAMS_CHANGE_FIELD_LABELS = {
+    issuedDate: 'Issued Date',
+    productName: 'Product Name',
+    brand: 'Brand',
+    packaging: 'Packaging',
+    registrant: 'Registrant',
+    registrantLocation: 'Registrant Location',
+    composition: 'Composition',
+    cosmeticsManufacturer: 'Manufacturer',
+    primaryPackagingManufacturer: 'Primary Packaging Manufacturer',
+    secondaryPackagingManufacturer: 'Secondary Packaging Manufacturer',
+    kits: 'Kits',
+    issuedBy: 'Issued By',
+    dosageForm: 'Dosage Form',
+    applicationDate: 'Application Date',
+    expiryDate: 'Expiry Date',
+    status: 'Status',
+};
+
+const TEAMS_MAX_CHANGE_BLOCKS = 5;
+
+function cardText(value, fallback = '-', maxLength = 900) {
+    const textValue = clean(value) || fallback;
+
+    if (textValue.length <= maxLength) {
+        return textValue;
+    }
+
+    return `${textValue.slice(0, maxLength - 1)}…`;
+}
+
+function formatDateForCard(value) {
+    const match = clean(value)
+        .match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+    if (!match) {
+        return cardText(value);
+    }
+
+    const months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+    ];
+
+    const monthIndex =
+        Number(match[2]) - 1;
+
+    if (
+        monthIndex < 0
+        || monthIndex >= months.length
+    ) {
+        return cardText(value);
+    }
+
+    return `${match[3]} ${months[monthIndex]} ${match[1]}`;
+}
+
+function formatJakartaTimestamp(value) {
+    const date = new Date(
+        value || Date.now(),
+    );
+
+    if (
+        !Number.isFinite(
+            date.getTime(),
+        )
+    ) {
+        return cardText(value);
+    }
+
+    const parts =
+        new Intl.DateTimeFormat(
+            'en-GB',
+            {
+                timeZone:
+                    'Asia/Jakarta',
+                day:
+                    '2-digit',
+                month:
+                    'short',
+                year:
+                    'numeric',
+                hour:
+                    '2-digit',
+                minute:
+                    '2-digit',
+                hourCycle:
+                    'h23',
+            },
+        )
+            .formatToParts(
+                date,
+            );
+
+    const values =
+        Object.fromEntries(
+            parts
+                .filter(
+                    (part) =>
+                        part.type
+                        !== 'literal',
+                )
+                .map(
+                    (part) => [
+                        part.type,
+                        part.value,
+                    ],
+                ),
+        );
+
+    return `${values.day} ${values.month} ${values.year} • ${values.hour}:${values.minute} WIB`;
+}
+
+function buildNewAdaptiveCard(record) {
+    return {
+        $schema:
+            'http://adaptivecards.io/schemas/adaptive-card.json',
+        type:
+            'AdaptiveCard',
+        version:
+            '1.2',
+        body: [
+            {
+                type:
+                    'Container',
+                items: [
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            'NEW COSMETICS REGISTRATION',
+                        weight:
+                            'Bolder',
+                        size:
+                            'Medium',
+                        color:
+                            'Good',
+                        wrap:
+                            true,
+                    },
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            'New BPOM cosmetics registration detected',
+                        isSubtle:
+                            true,
+                        spacing:
+                            'Small',
+                        wrap:
+                            true,
+                    },
+                ],
+            },
+            {
+                type:
+                    'Container',
+                separator:
+                    true,
+                spacing:
+                    'Medium',
+                items: [
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            cardText(
+                                record.brand,
+                                'UNKNOWN BRAND',
+                            ),
+                        weight:
+                            'Bolder',
+                        size:
+                            'Large',
+                        wrap:
+                            true,
+                    },
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            cardText(
+                                record.productName,
+                                'Unnamed product',
+                            ),
+                        weight:
+                            'Bolder',
+                        wrap:
+                            true,
+                        spacing:
+                            'Small',
+                    },
+                ],
+            },
+            {
+                type:
+                    'FactSet',
+                spacing:
+                    'Medium',
+                facts: [
+                    {
+                        title:
+                            'NIE',
+                        value:
+                            cardText(
+                                record.registrationNumber,
+                            ),
+                    },
+                    {
+                        title:
+                            'Issued Date',
+                        value:
+                            formatDateForCard(
+                                record.issuedDate,
+                            ),
+                    },
+                    {
+                        title:
+                            'Registrant',
+                        value:
+                            cardText(
+                                record.registrant,
+                            ),
+                    },
+                    {
+                        title:
+                            'Manufacturer',
+                        value:
+                            cardText(
+                                record.cosmeticsManufacturer,
+                            ),
+                    },
+                    {
+                        title:
+                            'Packaging',
+                        value:
+                            cardText(
+                                record.packaging,
+                            ),
+                    },
+                ],
+            },
+            {
+                type:
+                    'Container',
+                separator:
+                    true,
+                spacing:
+                    'Medium',
+                items: [
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            'Detected',
+                        size:
+                            'Small',
+                        isSubtle:
+                            true,
+                        weight:
+                            'Bolder',
+                    },
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            formatJakartaTimestamp(
+                                record.detectedAt,
+                            ),
+                        size:
+                            'Small',
+                        isSubtle:
+                            true,
+                        spacing:
+                            'None',
+                    },
+                ],
+            },
+        ],
+    };
+}
+
+function buildChangeBlock(
+    field,
+    previousRecord,
+    currentRecord,
+    {
+        separator = false,
+    } = {},
+) {
+    const label =
+        TEAMS_CHANGE_FIELD_LABELS[field]
+        || field;
+
+    const previousValue =
+        cardText(
+            previousRecord?.[field],
+            '-',
+        );
+
+    const currentValue =
+        cardText(
+            currentRecord?.[field],
+            '-',
+        );
+
+    const content = [
+        {
+            type:
+                'TextBlock',
+            text:
+                label,
+            weight:
+                'Bolder',
+            spacing:
+                separator
+                    ? 'None'
+                    : 'Medium',
+            wrap:
+                true,
+        },
+        {
+            type:
+                'ColumnSet',
+            spacing:
+                'Small',
+            columns: [
+                {
+                    type:
+                        'Column',
+                    width:
+                        'stretch',
+                    items: [
+                        {
+                            type:
+                                'TextBlock',
+                            text:
+                                'Previous',
+                            size:
+                                'Small',
+                            isSubtle:
+                                true,
+                        },
+                        {
+                            type:
+                                'TextBlock',
+                            text:
+                                previousValue,
+                            wrap:
+                                true,
+                            isSubtle:
+                                true,
+                            spacing:
+                                'Small',
+                        },
+                    ],
+                },
+                {
+                    type:
+                        'Column',
+                    width:
+                        'stretch',
+                    items: [
+                        {
+                            type:
+                                'TextBlock',
+                            text:
+                                'Current',
+                            size:
+                                'Small',
+                            isSubtle:
+                                true,
+                        },
+                        {
+                            type:
+                                'TextBlock',
+                            text:
+                                currentValue,
+                            wrap:
+                                true,
+                            weight:
+                                'Bolder',
+                            spacing:
+                                'Small',
+                        },
+                    ],
+                },
+            ],
+        },
+    ];
+
+    if (!separator) {
+        return content;
+    }
+
+    return [
+        {
+            type:
+                'Container',
+            separator:
+                true,
+            spacing:
+                'Medium',
+            items:
+                content,
+        },
+    ];
+}
+
+function buildChangedAdaptiveCard(record) {
+    const changedFields =
+        Array.isArray(
+            record.changedFields,
+        )
+            ? record.changedFields
+                .filter(Boolean)
+            : [];
+
+    const visibleChangedFields =
+        changedFields.slice(
+            0,
+            TEAMS_MAX_CHANGE_BLOCKS,
+        );
+
+    const hiddenChangeCount =
+        Math.max(
+            0,
+            changedFields.length
+            - visibleChangedFields.length,
+        );
+
+    const changeItems = [
+        {
+            type:
+                'TextBlock',
+            text:
+                'CHANGES DETECTED',
+            weight:
+                'Bolder',
+            size:
+                'Small',
+            color:
+                'Warning',
+        },
+    ];
+
+    visibleChangedFields
+        .forEach(
+            (
+                field,
+                index,
+            ) => {
+                changeItems.push(
+                    ...buildChangeBlock(
+                        field,
+                        record.previous
+                        ?? {},
+                        record,
+                        {
+                            separator:
+                                index > 0,
+                        },
+                    ),
+                );
+            },
+        );
+
+    if (
+        hiddenChangeCount > 0
+    ) {
+        changeItems.push({
+            type:
+                'TextBlock',
+            text:
+                `+ ${hiddenChangeCount} additional changed field(s) are available in the Actor dataset.`,
+            isSubtle:
+                true,
+            size:
+                'Small',
+            wrap:
+                true,
+            spacing:
+                'Medium',
+        });
+    }
+
+    return {
+        $schema:
+            'http://adaptivecards.io/schemas/adaptive-card.json',
+        type:
+            'AdaptiveCard',
+        version:
+            '1.2',
+        body: [
+            {
+                type:
+                    'Container',
+                items: [
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            'COSMETICS REGISTRATION CHANGED',
+                        weight:
+                            'Bolder',
+                        size:
+                            'Medium',
+                        color:
+                            'Warning',
+                        wrap:
+                            true,
+                    },
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            'Changes detected in an existing BPOM registration',
+                        isSubtle:
+                            true,
+                        spacing:
+                            'Small',
+                        wrap:
+                            true,
+                    },
+                ],
+            },
+            {
+                type:
+                    'Container',
+                separator:
+                    true,
+                spacing:
+                    'Medium',
+                items: [
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            cardText(
+                                record.brand,
+                                'UNKNOWN BRAND',
+                            ),
+                        weight:
+                            'Bolder',
+                        size:
+                            'Large',
+                        wrap:
+                            true,
+                    },
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            cardText(
+                                record.productName,
+                                'Unnamed product',
+                            ),
+                        weight:
+                            'Bolder',
+                        wrap:
+                            true,
+                        spacing:
+                            'Small',
+                    },
+                    {
+                        type:
+                            'FactSet',
+                        spacing:
+                            'Medium',
+                        facts: [
+                            {
+                                title:
+                                    'NIE',
+                                value:
+                                    cardText(
+                                        record.registrationNumber,
+                                    ),
+                            },
+                            {
+                                title:
+                                    'Issued Date',
+                                value:
+                                    formatDateForCard(
+                                        record.issuedDate,
+                                    ),
+                            },
+                        ],
+                    },
+                ],
+            },
+            {
+                type:
+                    'Container',
+                separator:
+                    true,
+                spacing:
+                    'Medium',
+                items:
+                    changeItems,
+            },
+            {
+                type:
+                    'Container',
+                separator:
+                    true,
+                spacing:
+                    'Medium',
+                items: [
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            'Detected',
+                        size:
+                            'Small',
+                        isSubtle:
+                            true,
+                        weight:
+                            'Bolder',
+                    },
+                    {
+                        type:
+                            'TextBlock',
+                        text:
+                            formatJakartaTimestamp(
+                                record.detectedAt,
+                            ),
+                        size:
+                            'Small',
+                        isSubtle:
+                            true,
+                        spacing:
+                            'None',
+                    },
+                ],
+            },
+        ],
+    };
+}
+
+function buildTeamsWebhookPayload(record) {
+    const card =
+        record.eventType
+            === 'NEW'
+            ? buildNewAdaptiveCard(
+                record,
+            )
+            : buildChangedAdaptiveCard(
+                record,
+            );
+
+    return {
+        type:
+            'message',
+        attachments: [
+            {
+                contentType:
+                    'application/vnd.microsoft.card.adaptive',
+                contentUrl:
+                    null,
+                content:
+                    card,
+            },
+        ],
+    };
+}
+
+async function postTeamsNotification(
+    webhookUrl,
+    record,
+    teamsStats,
+) {
+    teamsStats.attempted++;
+
+    const maxAttempts = 3;
+    let lastError = '';
+
+    for (
+        let attempt = 1;
+        attempt <= maxAttempts;
+        attempt++
+    ) {
+        if (
+            attempt > 1
+        ) {
+            teamsStats.retries++;
+        }
+
+        const controller =
+            new AbortController();
+
+        const timeout =
+            setTimeout(
+                () =>
+                    controller
+                        .abort(),
+                15000,
+            );
+
+        try {
+            const response =
+                await fetch(
+                    webhookUrl,
+                    {
+                        method:
+                            'POST',
+                        headers: {
+                            'Content-Type':
+                                'application/json',
+                        },
+                        body:
+                            JSON.stringify(
+                                buildTeamsWebhookPayload(
+                                    record,
+                                ),
+                            ),
+                        signal:
+                            controller
+                                .signal,
+                    },
+                );
+
+            const responseText =
+                await response
+                    .text()
+                    .catch(
+                        () => '',
+                    );
+
+            if (
+                response.ok
+            ) {
+                teamsStats.succeeded++;
+
+                log.info(
+                    'Teams notification delivered.',
+                    {
+                        eventType:
+                            record.eventType,
+                        registrationNumber:
+                            record.registrationNumber,
+                        attempt,
+                    },
+                );
+
+                return true;
+            }
+
+            lastError =
+                `HTTP ${response.status}`
+                + (
+                    responseText
+                        ? ` - ${cardText(responseText, '', 300)}`
+                        : ''
+                );
+
+            const retryable =
+                response.status
+                    === 429
+                || response.status
+                    >= 500;
+
+            if (
+                !retryable
+                || attempt
+                    >= maxAttempts
+            ) {
+                break;
+            }
+
+            let retryDelayMs =
+                1000
+                * attempt;
+
+            if (
+                response.status
+                    === 429
+            ) {
+                const retryAfter =
+                    Number(
+                        response.headers
+                            .get(
+                                'retry-after',
+                            ),
+                    );
+
+                if (
+                    Number.isFinite(
+                        retryAfter,
+                    )
+                    && retryAfter > 0
+                ) {
+                    retryDelayMs =
+                        Math.min(
+                            retryAfter
+                                * 1000,
+                            15000,
+                        );
+                }
+            }
+
+            await sleep(
+                retryDelayMs,
+            );
+        } catch (error) {
+            lastError =
+                error?.name
+                    === 'AbortError'
+                    ? 'Request timed out after 15 seconds.'
+                    : (
+                        error
+                            ?.message
+                        || String(
+                            error,
+                        )
+                    );
+
+            if (
+                attempt
+                    >= maxAttempts
+            ) {
+                break;
+            }
+
+            await sleep(
+                1000
+                * attempt,
+            );
+        } finally {
+            clearTimeout(
+                timeout,
+            );
+        }
+    }
+
+    teamsStats.failed++;
+
+    if (
+        teamsStats.failureSamples
+            .length < 20
+    ) {
+        teamsStats.failureSamples
+            .push({
+                eventType:
+                    record.eventType,
+                registrationNumber:
+                    record.registrationNumber,
+                error:
+                    lastError,
+            });
+    }
+
+    log.error(
+        'Teams notification delivery failed.',
+        {
+            eventType:
+                record.eventType,
+            registrationNumber:
+                record.registrationNumber,
+            error:
+                lastError,
+        },
+    );
+
+    return false;
 }
 
 async function visibleLocator(locator) {
@@ -3291,6 +4168,17 @@ await Actor.main(async () => {
             input.debug,
         );
 
+    const teamsWebhookUrl =
+        clean(
+            process.env
+                .TEAMS_WEBHOOK_URL,
+        );
+
+    const teamsNotificationsEnabled =
+        Boolean(
+            teamsWebhookUrl,
+        );
+
     const itemLimit =
         maxItemsPerQuery > 0
             ? maxItemsPerQuery
@@ -3375,6 +4263,7 @@ await Actor.main(async () => {
             detailFetchLimitPerRun,
             allowPartialSnapshotUpdate,
             debug,
+            teamsNotificationsEnabled,
         },
     );
 
@@ -4052,6 +4941,8 @@ await Actor.main(async () => {
 
     const pendingOutputRecords = [];
 
+    const operationalAlertRecords = [];
+
     const newCandidates = [];
     const discoveredCandidates = [];
     const changedCandidates = [];
@@ -4485,6 +5376,18 @@ await Actor.main(async () => {
         };
 
         if (
+            eventType
+                === 'NEW'
+            || eventType
+                === 'CHANGED'
+        ) {
+            operationalAlertRecords
+                .push(
+                    output,
+                );
+        }
+
+        if (
             shouldEmit(
                 emit,
                 eventType,
@@ -4763,6 +5666,95 @@ await Actor.main(async () => {
                     failedJobs
                         .length,
                 allowPartialSnapshotUpdate,
+            },
+        );
+    }
+
+    const qualityGatePassed =
+        !detectChanges
+        || overallCoverageComplete;
+
+    const teamsStats = {
+        enabled:
+            teamsNotificationsEnabled,
+        eligibleRecords:
+            operationalAlertRecords
+                .length,
+        newRecords:
+            operationalAlertRecords
+                .filter(
+                    (record) =>
+                        record
+                            .eventType
+                        === 'NEW',
+                )
+                .length,
+        changedRecords:
+            operationalAlertRecords
+                .filter(
+                    (record) =>
+                        record
+                            .eventType
+                        === 'CHANGED',
+                )
+                .length,
+        attempted:
+            0,
+        succeeded:
+            0,
+        failed:
+            0,
+        retries:
+            0,
+        suppressedByQualityGate:
+            qualityGatePassed
+                ? 0
+                : operationalAlertRecords
+                    .length,
+        failureSamples:
+            [],
+    };
+
+    if (
+        qualityGatePassed
+        && operationalAlertRecords
+            .length > 0
+    ) {
+        if (
+            teamsNotificationsEnabled
+        ) {
+            for (
+                const record
+                of operationalAlertRecords
+            ) {
+                await postTeamsNotification(
+                    teamsWebhookUrl,
+                    record,
+                    teamsStats,
+                );
+            }
+        } else {
+            log.warning(
+                'Operational BPOM event(s) detected, but Teams notifications are disabled because TEAMS_WEBHOOK_URL is not configured.',
+                {
+                    operationalEvents:
+                        operationalAlertRecords
+                            .length,
+                },
+            );
+        }
+    } else if (
+        !qualityGatePassed
+        && operationalAlertRecords
+            .length > 0
+    ) {
+        log.warning(
+            'Teams operational notifications suppressed because the monitoring quality gate did not pass.',
+            {
+                operationalEvents:
+                    operationalAlertRecords
+                        .length,
+                incompleteQueries,
             },
         );
     }
@@ -5077,6 +6069,9 @@ await Actor.main(async () => {
                 reappearedCount,
         },
 
+        teamsNotifications:
+            teamsStats,
+
         querySummaries:
             querySummaryList,
 
@@ -5106,9 +6101,7 @@ await Actor.main(async () => {
         snapshotUpdated:
             snapshotCanUpdate,
 
-        qualityGatePassed:
-            !detectChanges
-            || overallCoverageComplete,
+        qualityGatePassed,
 
         qualityGateReason:
             (
