@@ -4,7 +4,7 @@ import { PlaywrightCrawler } from 'crawlee';
 
 const BASE_URL = 'https://cekbpom.pom.go.id/produk-kosmetika';
 const SNAPSHOT_VERSION = 7;
-const ACTOR_VERSION = '0.2.6-r3-teams1';
+const ACTOR_VERSION = '0.2.6-r3-teams2';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const LISTING_FIELDS = [
@@ -56,7 +56,10 @@ function escapeRegex(value) {
 
 function stripEmbeddedLabels(value, labels) {
     const text = clean(value);
-    if (!text) return '';
+
+    if (!text) {
+        return '';
+    }
 
     const pattern = labels
         .map(escapeRegex)
@@ -98,257 +101,603 @@ function sanitizeCosmeticsManufacturer(value) {
 function canonicalizeLegacyRecord(record = {}) {
     return {
         ...record,
-        registrant: sanitizeRegistrant(record.registrant),
-        cosmeticsManufacturer: sanitizeCosmeticsManufacturer(
-            record.cosmeticsManufacturer,
-        ),
+        registrant:
+            sanitizeRegistrant(
+                record.registrant,
+            ),
+        cosmeticsManufacturer:
+            sanitizeCosmeticsManufacturer(
+                record.cosmeticsManufacturer,
+            ),
     };
 }
 
 function parseRegistrationCell(value) {
-    const text = clean(value);
+    const text =
+        clean(value);
 
     return {
         registrationNumber:
-            text.match(/\b[A-Z]{2,3}\d{8,}\b/i)?.[0] || '',
+            text.match(
+                /\b[A-Z]{2,3}\d{8,}\b/i,
+            )?.[0]
+            || '',
         issuedDate:
-            text.match(/Terbit\s*:\s*(\d{4}-\d{2}-\d{2})/i)?.[1] || '',
+            text.match(
+                /Terbit\s*:\s*(\d{4}-\d{2}-\d{2})/i,
+            )?.[1]
+            || '',
     };
 }
 
 function parseProductCell(value) {
-    const lines = textLines(value);
+    const lines =
+        textLines(value);
+
     let brand = '';
     let packaging = '';
+
     const productNameLines = [];
 
-    for (const line of lines) {
-        if (/^Merk\s*:/i.test(line)) {
-            brand = clean(line.replace(/^Merk\s*:/i, ''));
-        } else if (/^Merek\s*:/i.test(line)) {
-            brand = clean(line.replace(/^Merek\s*:/i, ''));
-        } else if (/^Kemasan\s*:/i.test(line)) {
-            packaging = clean(line.replace(/^Kemasan\s*:/i, ''));
+    for (
+        const line
+        of lines
+    ) {
+        if (
+            /^Merk\s*:/i.test(
+                line,
+            )
+        ) {
+            brand =
+                clean(
+                    line.replace(
+                        /^Merk\s*:/i,
+                        '',
+                    ),
+                );
+        } else if (
+            /^Merek\s*:/i.test(
+                line,
+            )
+        ) {
+            brand =
+                clean(
+                    line.replace(
+                        /^Merek\s*:/i,
+                        '',
+                    ),
+                );
+        } else if (
+            /^Kemasan\s*:/i.test(
+                line,
+            )
+        ) {
+            packaging =
+                clean(
+                    line.replace(
+                        /^Kemasan\s*:/i,
+                        '',
+                    ),
+                );
         } else {
-            productNameLines.push(line);
+            productNameLines
+                .push(
+                    line,
+                );
         }
     }
 
-    const fullText = clean(value);
+    const fullText =
+        clean(value);
 
     if (!brand) {
         brand =
-            fullText.match(/Merk\s*:\s*(.*?)(?=Kemasan\s*:|$)/i)?.[1]?.trim()
+            fullText.match(
+                /Merk\s*:\s*(.*?)(?=Kemasan\s*:|$)/i,
+            )?.[1]?.trim()
             || '';
     }
 
     if (!packaging) {
         packaging =
-            fullText.match(/Kemasan\s*:\s*(.*)$/i)?.[1]?.trim()
+            fullText.match(
+                /Kemasan\s*:\s*(.*)$/i,
+            )?.[1]?.trim()
             || '';
     }
 
     return {
-        productName: clean(
-            productNameLines
-                .join(' ')
-                .replace(/Merk\s*:.*$/i, '')
-                .replace(/Merek\s*:.*$/i, ''),
-        ),
-        brand: clean(brand),
-        packaging: clean(packaging),
+        productName:
+            clean(
+                productNameLines
+                    .join(' ')
+                    .replace(
+                        /Merk\s*:.*$/i,
+                        '',
+                    )
+                    .replace(
+                        /Merek\s*:.*$/i,
+                        '',
+                    ),
+            ),
+        brand:
+            clean(
+                brand,
+            ),
+        packaging:
+            clean(
+                packaging,
+            ),
     };
 }
 
 function parseRegistrantCell(value) {
-    const lines = textLines(value);
+    const lines =
+        textLines(value);
 
-    if (lines.length >= 2) {
+    if (
+        lines.length >= 2
+    ) {
         return {
-            registrant: sanitizeRegistrant(lines[0]),
-            registrantLocation: clean(lines.slice(1).join(' ')),
+            registrant:
+                sanitizeRegistrant(
+                    lines[0],
+                ),
+            registrantLocation:
+                clean(
+                    lines
+                        .slice(1)
+                        .join(' '),
+                ),
         };
     }
 
     return {
-        registrant: sanitizeRegistrant(value),
-        registrantLocation: '',
+        registrant:
+            sanitizeRegistrant(
+                value,
+            ),
+        registrantLocation:
+            '',
     };
 }
 
 function hashFields(record, fields) {
-    const payload = Object.fromEntries(
-        fields.map((key) => [key, clean(record?.[key])]),
-    );
+    const payload =
+        Object.fromEntries(
+            fields.map(
+                (key) => [
+                    key,
+                    clean(
+                        record?.[key],
+                    ),
+                ],
+            ),
+        );
 
     return crypto
-        .createHash('sha256')
-        .update(JSON.stringify(payload))
-        .digest('hex');
+        .createHash(
+            'sha256',
+        )
+        .update(
+            JSON.stringify(
+                payload,
+            ),
+        )
+        .digest(
+            'hex',
+        );
 }
 
 function stableHash(record) {
-    return hashFields(record, [...LISTING_FIELDS, ...DETAIL_FIELDS]);
+    return hashFields(
+        record,
+        [
+            ...LISTING_FIELDS,
+            ...DETAIL_FIELDS,
+        ],
+    );
 }
 
 function basicHash(record) {
-    return hashFields(record, LISTING_FIELDS);
+    return hashFields(
+        record,
+        LISTING_FIELDS,
+    );
 }
 
 function detailHash(record) {
-    return hashFields(record, DETAIL_FIELDS);
+    return hashFields(
+        record,
+        DETAIL_FIELDS,
+    );
 }
 
 function inferDetailKnown(record = {}) {
-    return DETAIL_FIELDS.some((field) => clean(record[field]) !== '');
+    return DETAIL_FIELDS
+        .some(
+            (field) =>
+                clean(
+                    record[field],
+                )
+                !== '',
+        );
 }
 
 function previousKnownDetailFields(previousEntry) {
-    if (!previousEntry) return new Set();
+    if (!previousEntry) {
+        return new Set();
+    }
 
-    if (Array.isArray(previousEntry.detailKnownFields)) {
+    if (
+        Array.isArray(
+            previousEntry
+                .detailKnownFields,
+        )
+    ) {
         return new Set(
-            previousEntry.detailKnownFields
-                .filter((field) => DETAIL_FIELDS.includes(field)),
+            previousEntry
+                .detailKnownFields
+                .filter(
+                    (field) =>
+                        DETAIL_FIELDS
+                            .includes(
+                                field,
+                            ),
+                ),
         );
     }
 
-    const record = canonicalizeLegacyRecord(
-        previousEntry.record ?? {},
-    );
+    const record =
+        canonicalizeLegacyRecord(
+            previousEntry.record
+            ?? {},
+        );
 
     return new Set(
-        DETAIL_FIELDS.filter((field) => clean(record[field]) !== ''),
+        DETAIL_FIELDS
+            .filter(
+                (field) =>
+                    clean(
+                        record[field],
+                    )
+                    !== '',
+            ),
     );
 }
 
 function previousDetailKnown(previousEntry) {
-    if (!previousEntry) return false;
-
-    if (typeof previousEntry.detailKnown === 'boolean') {
-        return previousEntry.detailKnown;
+    if (!previousEntry) {
+        return false;
     }
 
-    return previousKnownDetailFields(previousEntry).size > 0
+    if (
+        typeof previousEntry
+            .detailKnown
+        === 'boolean'
+    ) {
+        return previousEntry
+            .detailKnown;
+    }
+
+    return (
+        previousKnownDetailFields(
+            previousEntry,
+        ).size > 0
         || inferDetailKnown(
-            canonicalizeLegacyRecord(previousEntry.record ?? {}),
-        );
+            canonicalizeLegacyRecord(
+                previousEntry.record
+                ?? {},
+            ),
+        )
+    );
 }
 
 function validIsoTimestamp(value) {
-    const text = clean(value);
-    return text && Number.isFinite(Date.parse(text));
+    const text =
+        clean(value);
+
+    return (
+        text
+        && Number.isFinite(
+            Date.parse(
+                text,
+            ),
+        )
+    );
 }
 
 function resolvePreviousDetailFetchedAt(
     previousEntry,
     legacyStateUpdatedAt = '',
 ) {
-    const direct = clean(previousEntry?.lastDetailFetchedAt);
-
-    if (validIsoTimestamp(direct)) return direct;
+    const direct =
+        clean(
+            previousEntry
+                ?.lastDetailFetchedAt,
+        );
 
     if (
-        previousDetailKnown(previousEntry)
-        && validIsoTimestamp(legacyStateUpdatedAt)
+        validIsoTimestamp(
+            direct,
+        )
     ) {
-        return clean(legacyStateUpdatedAt);
+        return direct;
+    }
+
+    if (
+        previousDetailKnown(
+            previousEntry,
+        )
+        && validIsoTimestamp(
+            legacyStateUpdatedAt,
+        )
+    ) {
+        return clean(
+            legacyStateUpdatedAt,
+        );
     }
 
     return '';
 }
 
-function detailAgeDays(lastDetailFetchedAt, referenceIso) {
+function detailAgeDays(
+    lastDetailFetchedAt,
+    referenceIso,
+) {
     if (
-        !validIsoTimestamp(lastDetailFetchedAt)
-        || !validIsoTimestamp(referenceIso)
+        !validIsoTimestamp(
+            lastDetailFetchedAt,
+        )
+        || !validIsoTimestamp(
+            referenceIso,
+        )
     ) {
         return null;
     }
 
     const ageMs =
-        Date.parse(referenceIso) - Date.parse(lastDetailFetchedAt);
+        Date.parse(
+            referenceIso,
+        )
+        - Date.parse(
+            lastDetailFetchedAt,
+        );
 
-    return Math.floor(ageMs / DAY_MS);
+    return Math.floor(
+        ageMs
+        / DAY_MS,
+    );
 }
 
 function normalizeKey(label) {
-    return clean(label)
+    return clean(
+        label,
+    )
         .toLowerCase()
-        .normalize('NFKD')
-        .replace(/[^a-z0-9]+/g, ' ')
+        .normalize(
+            'NFKD',
+        )
+        .replace(
+            /[^a-z0-9]+/g,
+            ' ',
+        )
         .trim();
 }
 
 function mapDetails(raw = {}) {
-    const normalized = Object.fromEntries(
-        Object.entries(raw).map(([key, value]) => [
-            normalizeKey(key),
-            clean(value),
-        ]),
-    );
+    const normalized =
+        Object.fromEntries(
+            Object.entries(
+                raw,
+            )
+                .map(
+                    (
+                        [
+                            key,
+                            value,
+                        ],
+                    ) => [
+                        normalizeKey(
+                            key,
+                        ),
+                        clean(
+                            value,
+                        ),
+                    ],
+                ),
+        );
 
-    const pick = (...candidates) => {
-        for (const candidate of candidates) {
-            const target = normalizeKey(candidate);
+    const pick = (
+        ...candidates
+    ) => {
+        for (
+            const candidate
+            of candidates
+        ) {
+            const target =
+                normalizeKey(
+                    candidate,
+                );
 
-            if (normalized[target]) {
-                return normalized[target];
+            if (
+                normalized[
+                    target
+                ]
+            ) {
+                return normalized[
+                    target
+                ];
             }
 
-            const fuzzy = Object.entries(normalized).find(
-                ([key]) => key.includes(target) || target.includes(key),
-            );
+            const fuzzy =
+                Object.entries(
+                    normalized,
+                )
+                    .find(
+                        ([key]) =>
+                            key
+                                .includes(
+                                    target,
+                                )
+                            || target
+                                .includes(
+                                    key,
+                                ),
+                    );
 
-            if (fuzzy?.[1]) return fuzzy[1];
+            if (
+                fuzzy?.[1]
+            ) {
+                return fuzzy[1];
+            }
         }
 
         return '';
     };
 
     return {
-        registrationNumber: pick(
-            'nomor registrasi',
-            'nomor izin edar',
-            'nie',
-        ),
-        productName: pick('nama produk'),
-        brand: pick('merk', 'merek'),
-        packaging: pick('kemasan'),
-        dosageForm: pick('bentuk sediaan'),
-        composition: pick('komposisi'),
-        applicationDate: pick('tanggal permohonan'),
-        issuedDate: pick('tanggal terbit'),
-        expiryDate: pick('tanggal expired', 'tanggal kedaluwarsa'),
-        registrant: pick('nama pendaftar', 'pendaftar'),
-        cosmeticsManufacturer: sanitizeCosmeticsManufacturer(
-            pick('industri kosmetika'),
-        ),
-        primaryPackagingManufacturer: pick('industri pengemas primer'),
-        secondaryPackagingManufacturer: pick('industri pengemas sekunder'),
-        kits: pick('kits'),
-        issuedBy: pick('diterbitkan oleh'),
-        status: pick('status'),
+        registrationNumber:
+            pick(
+                'nomor registrasi',
+                'nomor izin edar',
+                'nie',
+            ),
+
+        productName:
+            pick(
+                'nama produk',
+            ),
+
+        brand:
+            pick(
+                'merk',
+                'merek',
+            ),
+
+        packaging:
+            pick(
+                'kemasan',
+            ),
+
+        dosageForm:
+            pick(
+                'bentuk sediaan',
+            ),
+
+        composition:
+            pick(
+                'komposisi',
+            ),
+
+        applicationDate:
+            pick(
+                'tanggal permohonan',
+            ),
+
+        issuedDate:
+            pick(
+                'tanggal terbit',
+            ),
+
+        expiryDate:
+            pick(
+                'tanggal expired',
+                'tanggal kedaluwarsa',
+            ),
+
+        registrant:
+            pick(
+                'nama pendaftar',
+                'pendaftar',
+            ),
+
+        cosmeticsManufacturer:
+            sanitizeCosmeticsManufacturer(
+                pick(
+                    'industri kosmetika',
+                ),
+            ),
+
+        primaryPackagingManufacturer:
+            pick(
+                'industri pengemas primer',
+            ),
+
+        secondaryPackagingManufacturer:
+            pick(
+                'industri pengemas sekunder',
+            ),
+
+        kits:
+            pick(
+                'kits',
+            ),
+
+        issuedBy:
+            pick(
+                'diterbitkan oleh',
+            ),
+
+        status:
+            pick(
+                'status',
+            ),
     };
 }
 
 function buildJobs(input) {
     const jobs = [];
 
-    const add = (kind, values = []) => {
-        for (const raw of values || []) {
-            const value = clean(raw);
-            if (value) jobs.push({ kind, value });
+    const add = (
+        kind,
+        values = [],
+    ) => {
+        for (
+            const raw
+            of values
+            || []
+        ) {
+            const value =
+                clean(raw);
+
+            if (value) {
+                jobs.push({
+                    kind,
+                    value,
+                });
+            }
         }
     };
 
-    add('brand', input.brands);
-    add('registrant', input.registrants);
-    add('productName', input.productNames);
-    add('registrationNumber', input.registrationNumbers);
-    add('composition', input.compositions);
+    add(
+        'brand',
+        input.brands,
+    );
 
-    if (!jobs.length) {
+    add(
+        'registrant',
+        input.registrants,
+    );
+
+    add(
+        'productName',
+        input.productNames,
+    );
+
+    add(
+        'registrationNumber',
+        input.registrationNumbers,
+    );
+
+    add(
+        'composition',
+        input.compositions,
+    );
+
+    if (
+        !jobs.length
+    ) {
         throw new Error(
             'At least one monitoring criterion is required: brand, registrant, product name, registration number, or composition keyword.',
         );
@@ -358,99 +707,246 @@ function buildJobs(input) {
 }
 
 function buildWatchSignature(jobs) {
-    const normalized = jobs
-        .map((job) => ({
-            kind: job.kind,
-            value: clean(job.value).toLowerCase(),
-        }))
-        .sort((a, b) =>
-            `${a.kind}:${a.value}`.localeCompare(`${b.kind}:${b.value}`),
-        );
+    const normalized =
+        jobs
+            .map(
+                (job) => ({
+                    kind:
+                        job.kind,
+                    value:
+                        clean(
+                            job.value,
+                        )
+                            .toLowerCase(),
+                }),
+            )
+            .sort(
+                (a, b) =>
+                    `${a.kind}:${a.value}`
+                        .localeCompare(
+                            `${b.kind}:${b.value}`,
+                        ),
+            );
 
     return crypto
-        .createHash('sha256')
-        .update(JSON.stringify(normalized))
-        .digest('hex');
+        .createHash(
+            'sha256',
+        )
+        .update(
+            JSON.stringify(
+                normalized,
+            ),
+        )
+        .digest(
+            'hex',
+        );
 }
 
 function inputPlaceholderFor(kind) {
     return {
-        registrationNumber: 'Masukkan Nomor Registrasi',
-        productName: 'Masukkan Nama Produk',
-        brand: 'Masukkan Merk',
-        composition: 'Masukkan Komposisi',
-        registrant: 'Masukkan Nama Pendaftar',
+        registrationNumber:
+            'Masukkan Nomor Registrasi',
+        productName:
+            'Masukkan Nama Produk',
+        brand:
+            'Masukkan Merk',
+        composition:
+            'Masukkan Komposisi',
+        registrant:
+            'Masukkan Nama Pendaftar',
     }[kind];
 }
 
-function issuedAgeDays(issuedDate, referenceIso) {
-    const value = clean(issuedDate);
+function issuedAgeDays(
+    issuedDate,
+    referenceIso,
+) {
+    const value =
+        clean(
+            issuedDate,
+        );
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-
-    const issuedMs = Date.parse(`${value}T00:00:00Z`);
-    const referenceMs = Date.parse(referenceIso);
-
-    if (!Number.isFinite(issuedMs) || !Number.isFinite(referenceMs)) {
+    if (
+        !/^\d{4}-\d{2}-\d{2}$/
+            .test(
+                value,
+            )
+    ) {
         return null;
     }
 
-    return Math.floor((referenceMs - issuedMs) / DAY_MS);
-}
+    const issuedMs =
+        Date.parse(
+            `${value}T00:00:00Z`,
+        );
 
-function isoDateOnly(value) {
-    return clean(value).match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || '';
-}
+    const referenceMs =
+        Date.parse(
+            referenceIso,
+        );
 
-function compareDateOnly(left, right) {
-    const a = isoDateOnly(left);
-    const b = isoDateOnly(right);
+    if (
+        !Number.isFinite(
+            issuedMs,
+        )
+        || !Number.isFinite(
+            referenceMs,
+        )
+    ) {
+        return null;
+    }
 
-    if (!a || !b) return null;
-    if (a === b) return 0;
-
-    return a < b ? -1 : 1;
-}
-
-function earliestFirstSeenAt(records = {}) {
-    const values = Object.values(records)
-        .map((entry) => clean(
-            entry?.firstSeenAt
-            || entry?.record?.scrapedAt,
-        ))
-        .filter((value) => Number.isFinite(Date.parse(value)))
-        .sort((a, b) => Date.parse(a) - Date.parse(b));
-
-    return values[0] || '';
-}
-
-function previousObservationCount(previousEntry) {
-    if (!previousEntry) return 0;
-
-    const value = Number(previousEntry.observationCount);
-
-    return Number.isFinite(value) && value >= 0
-        ? value
-        : 1;
-}
-
-function previousConsecutiveMisses(previousEntry) {
-    const value = Number(previousEntry?.consecutiveMisses);
-
-    return Number.isFinite(value) && value >= 0
-        ? value
-        : 0;
-}
-
-function diffFields(previous, current, fields) {
-    return fields.filter(
-        (key) =>
-            clean(previous?.[key])
-            !== clean(current?.[key]),
+    return Math.floor(
+        (
+            referenceMs
+            - issuedMs
+        )
+        / DAY_MS,
     );
 }
 
-function diffListingFields(previous, current) {
+function isoDateOnly(value) {
+    return clean(
+        value,
+    )
+        .match(
+            /^(\d{4}-\d{2}-\d{2})/,
+        )?.[1]
+        || '';
+}
+
+function compareDateOnly(
+    left,
+    right,
+) {
+    const a =
+        isoDateOnly(
+            left,
+        );
+
+    const b =
+        isoDateOnly(
+            right,
+        );
+
+    if (
+        !a
+        || !b
+    ) {
+        return null;
+    }
+
+    if (
+        a === b
+    ) {
+        return 0;
+    }
+
+    return (
+        a < b
+            ? -1
+            : 1
+    );
+}
+
+function earliestFirstSeenAt(records = {}) {
+    const values =
+        Object.values(
+            records,
+        )
+            .map(
+                (entry) =>
+                    clean(
+                        entry
+                            ?.firstSeenAt
+                        || entry
+                            ?.record
+                            ?.scrapedAt,
+                    ),
+            )
+            .filter(
+                (value) =>
+                    Number.isFinite(
+                        Date.parse(
+                            value,
+                        ),
+                    ),
+            )
+            .sort(
+                (a, b) =>
+                    Date.parse(
+                        a,
+                    )
+                    - Date.parse(
+                        b,
+                    ),
+            );
+
+    return values[0]
+        || '';
+}
+
+function previousObservationCount(previousEntry) {
+    if (!previousEntry) {
+        return 0;
+    }
+
+    const value =
+        Number(
+            previousEntry
+                .observationCount,
+        );
+
+    return (
+        Number.isFinite(
+            value,
+        )
+        && value >= 0
+            ? value
+            : 1
+    );
+}
+
+function previousConsecutiveMisses(previousEntry) {
+    const value =
+        Number(
+            previousEntry
+                ?.consecutiveMisses,
+        );
+
+    return (
+        Number.isFinite(
+            value,
+        )
+        && value >= 0
+            ? value
+            : 0
+    );
+}
+
+function diffFields(
+    previous,
+    current,
+    fields,
+) {
+    return fields
+        .filter(
+            (key) =>
+                clean(
+                    previous
+                        ?.[key],
+                )
+                !== clean(
+                    current
+                        ?.[key],
+                ),
+        );
+}
+
+function diffListingFields(
+    previous,
+    current,
+) {
     return diffFields(
         previous,
         current,
@@ -464,13 +960,26 @@ function diffKnownDetailFields(
     previousKnownFields,
     currentKnownFields,
 ) {
-    return DETAIL_FIELDS.filter(
-        (key) =>
-            previousKnownFields.has(key)
-            && currentKnownFields.has(key)
-            && clean(previous?.[key])
-                !== clean(current?.[key]),
-    );
+    return DETAIL_FIELDS
+        .filter(
+            (key) =>
+                previousKnownFields
+                    .has(
+                        key,
+                    )
+                && currentKnownFields
+                    .has(
+                        key,
+                    )
+                && clean(
+                    previous
+                        ?.[key],
+                )
+                !== clean(
+                    current
+                        ?.[key],
+                ),
+        );
 }
 
 function calculateEnrichedFields(
@@ -479,66 +988,390 @@ function calculateEnrichedFields(
     previousKnownFields,
     currentKnownFields,
 ) {
-    return DETAIL_FIELDS.filter(
-        (key) =>
-            !previousKnownFields.has(key)
-            && currentKnownFields.has(key)
-            && Boolean(clean(current?.[key])),
-    );
+    return DETAIL_FIELDS
+        .filter(
+            (key) =>
+                !previousKnownFields
+                    .has(
+                        key,
+                    )
+                && currentKnownFields
+                    .has(
+                        key,
+                    )
+                && Boolean(
+                    clean(
+                        current
+                            ?.[key],
+                    ),
+                ),
+        );
 }
 
-function shouldEmit(mode, eventType) {
-    if (mode === 'new') {
-        return eventType === 'NEW';
+function shouldEmit(
+    mode,
+    eventType,
+) {
+    if (
+        mode === 'new'
+    ) {
+        return (
+            eventType
+            === 'NEW'
+        );
     }
 
-    if (mode === 'changes') {
+    if (
+        mode === 'changes'
+    ) {
         return (
-            eventType === 'NEW'
-            || eventType === 'CHANGED'
+            eventType
+            === 'NEW'
+            || eventType
+            === 'CHANGED'
         );
     }
 
     return true;
 }
 
+function normalizeMatchText(value) {
+    return clean(
+        value,
+    )
+        .toLowerCase()
+        .normalize(
+            'NFKD',
+        )
+        .replace(
+            /[\u0300-\u036f]/g,
+            '',
+        )
+        .replace(
+            /[^a-z0-9]+/g,
+            ' ',
+        )
+        .trim();
+}
+
+function normalizeRegistrationNumber(value) {
+    return clean(
+        value,
+    )
+        .toUpperCase()
+        .replace(
+            /[^A-Z0-9]/g,
+            '',
+        );
+}
+
+function evaluateJobMatch(
+    record,
+    job,
+) {
+    const expectedText =
+        normalizeMatchText(
+            job?.value,
+        );
+
+    if (
+        !expectedText
+    ) {
+        return {
+            verifiable:
+                false,
+            matches:
+                true,
+        };
+    }
+
+    if (
+        job.kind
+        === 'registrationNumber'
+    ) {
+        const actual =
+            normalizeRegistrationNumber(
+                record
+                    ?.registrationNumber,
+            );
+
+        const expected =
+            normalizeRegistrationNumber(
+                job.value,
+            );
+
+        return {
+            verifiable:
+                Boolean(
+                    actual,
+                ),
+            matches:
+                Boolean(
+                    actual,
+                )
+                && actual
+                    === expected,
+        };
+    }
+
+    const fieldByKind = {
+        brand:
+            'brand',
+        registrant:
+            'registrant',
+        productName:
+            'productName',
+        composition:
+            'composition',
+    };
+
+    const field =
+        fieldByKind[
+            job.kind
+        ];
+
+    if (!field) {
+        return {
+            verifiable:
+                false,
+            matches:
+                true,
+        };
+    }
+
+    const actualText =
+        normalizeMatchText(
+            record?.[field],
+        );
+
+    if (
+        !actualText
+    ) {
+        return {
+            verifiable:
+                false,
+            matches:
+                true,
+        };
+    }
+
+    if (
+        job.kind
+        === 'brand'
+    ) {
+        return {
+            verifiable:
+                true,
+            matches:
+                actualText
+                === expectedText,
+        };
+    }
+
+    return {
+        verifiable:
+            true,
+        matches:
+            actualText
+                .includes(
+                    expectedText,
+                ),
+    };
+}
+
+function recordMatchesAnyJobConservatively(
+    record,
+    jobs,
+) {
+    let hasUnverifiableJob =
+        false;
+
+    for (
+        const job
+        of jobs
+    ) {
+        const result =
+            evaluateJobMatch(
+                record,
+                job,
+            );
+
+        if (
+            result.verifiable
+            && result.matches
+        ) {
+            return true;
+        }
+
+        if (
+            !result.verifiable
+        ) {
+            hasUnverifiableJob =
+                true;
+        }
+    }
+
+    return hasUnverifiableJob;
+}
+
+function addSourceFilterMismatch(
+    sourceFilterStats,
+    job,
+    record,
+    stage,
+) {
+    sourceFilterStats
+        .mismatchedRows++;
+
+    if (
+        sourceFilterStats
+            .mismatchSamples
+            .length < 25
+    ) {
+        sourceFilterStats
+            .mismatchSamples
+            .push({
+                stage,
+
+                jobKind:
+                    job.kind,
+
+                expected:
+                    job.value,
+
+                registrationNumber:
+                    clean(
+                        record
+                            ?.registrationNumber,
+                    ),
+
+                brand:
+                    clean(
+                        record
+                            ?.brand,
+                    ),
+
+                productName:
+                    clean(
+                        record
+                            ?.productName,
+                    ),
+
+                registrant:
+                    clean(
+                        record
+                            ?.registrant,
+                    ),
+            });
+    }
+}
+
 const TEAMS_CHANGE_FIELD_LABELS = {
-    issuedDate: 'Issued Date',
-    productName: 'Product Name',
-    brand: 'Brand',
-    packaging: 'Packaging',
-    registrant: 'Registrant',
-    registrantLocation: 'Registrant Location',
-    composition: 'Composition',
-    cosmeticsManufacturer: 'Manufacturer',
-    primaryPackagingManufacturer: 'Primary Packaging Manufacturer',
-    secondaryPackagingManufacturer: 'Secondary Packaging Manufacturer',
-    kits: 'Kits',
-    issuedBy: 'Issued By',
-    dosageForm: 'Dosage Form',
-    applicationDate: 'Application Date',
-    expiryDate: 'Expiry Date',
-    status: 'Status',
+    issuedDate:
+        'Issued Date',
+
+    productName:
+        'Product Name',
+
+    brand:
+        'Brand',
+
+    packaging:
+        'Packaging',
+
+    registrant:
+        'Registrant',
+
+    registrantLocation:
+        'Registrant Location',
+
+    composition:
+        'Composition',
+
+    cosmeticsManufacturer:
+        'Manufacturer',
+
+    primaryPackagingManufacturer:
+        'Primary Packaging Manufacturer',
+
+    secondaryPackagingManufacturer:
+        'Secondary Packaging Manufacturer',
+
+    kits:
+        'Kits',
+
+    issuedBy:
+        'Issued By',
+
+    dosageForm:
+        'Dosage Form',
+
+    applicationDate:
+        'Application Date',
+
+    expiryDate:
+        'Expiry Date',
+
+    status:
+        'Status',
 };
 
 const TEAMS_MAX_CHANGE_BLOCKS = 5;
 
-function cardText(value, fallback = '-', maxLength = 900) {
-    const textValue = clean(value) || fallback;
+function cardText(
+    value,
+    fallback = 'N/A',
+    maxLength = 900,
+) {
+    const cleanedValue =
+        clean(
+            value,
+        );
 
-    if (textValue.length <= maxLength) {
+    const unavailable =
+        !cleanedValue
+        || /^[-–—•]+$/
+            .test(
+                cleanedValue,
+            )
+        || /^(?:n\/?a|null|undefined)$/i
+            .test(
+                cleanedValue,
+            );
+
+    const textValue =
+        unavailable
+            ? fallback
+            : cleanedValue;
+
+    if (
+        textValue.length
+        <= maxLength
+    ) {
         return textValue;
     }
 
-    return `${textValue.slice(0, maxLength - 1)}…`;
+    return `${
+        textValue.slice(
+            0,
+            maxLength - 1,
+        )
+    }…`;
 }
 
 function formatDateForCard(value) {
-    const match = clean(value)
-        .match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const match =
+        clean(
+            value,
+        )
+            .match(
+                /^(\d{4})-(\d{2})-(\d{2})$/,
+            );
 
     if (!match) {
-        return cardText(value);
+        return cardText(
+            value,
+        );
     }
 
     const months = [
@@ -557,51 +1390,76 @@ function formatDateForCard(value) {
     ];
 
     const monthIndex =
-        Number(match[2]) - 1;
+        Number(
+            match[2],
+        )
+        - 1;
 
     if (
         monthIndex < 0
-        || monthIndex >= months.length
+        || monthIndex
+            >= months.length
     ) {
-        return cardText(value);
+        return cardText(
+            value,
+        );
     }
 
-    return `${match[3]} ${months[monthIndex]} ${match[1]}`;
+    return `${
+        match[3]
+    } ${
+        months[
+            monthIndex
+        ]
+    } ${
+        match[1]
+    }`;
 }
 
 function formatJakartaTimestamp(value) {
-    const date = new Date(
-        value || Date.now(),
-    );
+    const date =
+        new Date(
+            value
+            || Date.now(),
+        );
 
     if (
         !Number.isFinite(
             date.getTime(),
         )
     ) {
-        return cardText(value);
+        return cardText(
+            value,
+        );
     }
 
     const parts =
-        new Intl.DateTimeFormat(
-            'en-GB',
-            {
-                timeZone:
-                    'Asia/Jakarta',
-                day:
-                    '2-digit',
-                month:
-                    'short',
-                year:
-                    'numeric',
-                hour:
-                    '2-digit',
-                minute:
-                    '2-digit',
-                hourCycle:
-                    'h23',
-            },
-        )
+        new Intl
+            .DateTimeFormat(
+                'en-GB',
+                {
+                    timeZone:
+                        'Asia/Jakarta',
+
+                    day:
+                        '2-digit',
+
+                    month:
+                        'short',
+
+                    year:
+                        'numeric',
+
+                    hour:
+                        '2-digit',
+
+                    minute:
+                        '2-digit',
+
+                    hourCycle:
+                        'h23',
+                },
+            )
             .formatToParts(
                 date,
             );
@@ -622,45 +1480,68 @@ function formatJakartaTimestamp(value) {
                 ),
         );
 
-    return `${values.day} ${values.month} ${values.year} • ${values.hour}:${values.minute} WIB`;
+    return `${
+        values.day
+    } ${
+        values.month
+    } ${
+        values.year
+    } • ${
+        values.hour
+    }:${
+        values.minute
+    } WIB`;
 }
 
 function buildNewAdaptiveCard(record) {
     return {
         $schema:
             'http://adaptivecards.io/schemas/adaptive-card.json',
+
         type:
             'AdaptiveCard',
+
         version:
             '1.2',
+
         body: [
             {
                 type:
                     'Container',
+
                 items: [
                     {
                         type:
                             'TextBlock',
+
                         text:
                             'NEW COSMETICS REGISTRATION',
+
                         weight:
                             'Bolder',
+
                         size:
                             'Medium',
+
                         color:
                             'Good',
+
                         wrap:
                             true,
                     },
                     {
                         type:
                             'TextBlock',
+
                         text:
                             'New BPOM cosmetics registration detected',
+
                         isSubtle:
                             true,
+
                         spacing:
                             'Small',
+
                         wrap:
                             true,
                     },
@@ -669,38 +1550,49 @@ function buildNewAdaptiveCard(record) {
             {
                 type:
                     'Container',
+
                 separator:
                     true,
+
                 spacing:
                     'Medium',
+
                 items: [
                     {
                         type:
                             'TextBlock',
+
                         text:
                             cardText(
                                 record.brand,
                                 'UNKNOWN BRAND',
                             ),
+
                         weight:
                             'Bolder',
+
                         size:
                             'Large',
+
                         wrap:
                             true,
                     },
                     {
                         type:
                             'TextBlock',
+
                         text:
                             cardText(
                                 record.productName,
                                 'Unnamed product',
                             ),
+
                         weight:
                             'Bolder',
+
                         wrap:
                             true,
+
                         spacing:
                             'Small',
                     },
@@ -709,47 +1601,59 @@ function buildNewAdaptiveCard(record) {
             {
                 type:
                     'FactSet',
+
                 spacing:
                     'Medium',
+
                 facts: [
                     {
                         title:
                             'NIE',
+
                         value:
                             cardText(
-                                record.registrationNumber,
+                                record
+                                    .registrationNumber,
                             ),
                     },
                     {
                         title:
                             'Issued Date',
+
                         value:
                             formatDateForCard(
-                                record.issuedDate,
+                                record
+                                    .issuedDate,
                             ),
                     },
                     {
                         title:
                             'Registrant',
+
                         value:
                             cardText(
-                                record.registrant,
+                                record
+                                    .registrant,
                             ),
                     },
                     {
                         title:
                             'Manufacturer',
+
                         value:
                             cardText(
-                                record.cosmeticsManufacturer,
+                                record
+                                    .cosmeticsManufacturer,
                             ),
                     },
                     {
                         title:
                             'Packaging',
+
                         value:
                             cardText(
-                                record.packaging,
+                                record
+                                    .packaging,
                             ),
                     },
                 ],
@@ -757,34 +1661,46 @@ function buildNewAdaptiveCard(record) {
             {
                 type:
                     'Container',
+
                 separator:
                     true,
+
                 spacing:
                     'Medium',
+
                 items: [
                     {
                         type:
                             'TextBlock',
+
                         text:
                             'Detected',
+
                         size:
                             'Small',
+
                         isSubtle:
                             true,
+
                         weight:
                             'Bolder',
                     },
                     {
                         type:
                             'TextBlock',
+
                         text:
                             formatJakartaTimestamp(
-                                record.detectedAt,
+                                record
+                                    .detectedAt,
                             ),
+
                         size:
                             'Small',
+
                         isSubtle:
                             true,
+
                         spacing:
                             'None',
                     },
@@ -803,18 +1719,22 @@ function buildChangeBlock(
     } = {},
 ) {
     const label =
-        TEAMS_CHANGE_FIELD_LABELS[field]
+        TEAMS_CHANGE_FIELD_LABELS[
+            field
+        ]
         || field;
 
     const previousValue =
         cardText(
-            previousRecord?.[field],
+            previousRecord
+                ?.[field],
             '-',
         );
 
     const currentValue =
         cardText(
-            currentRecord?.[field],
+            currentRecord
+                ?.[field],
             '-',
         );
 
@@ -822,48 +1742,63 @@ function buildChangeBlock(
         {
             type:
                 'TextBlock',
+
             text:
                 label,
+
             weight:
                 'Bolder',
+
             spacing:
                 separator
                     ? 'None'
                     : 'Medium',
+
             wrap:
                 true,
         },
         {
             type:
                 'ColumnSet',
+
             spacing:
                 'Small',
+
             columns: [
                 {
                     type:
                         'Column',
+
                     width:
                         'stretch',
+
                     items: [
                         {
                             type:
                                 'TextBlock',
+
                             text:
                                 'Previous',
+
                             size:
                                 'Small',
+
                             isSubtle:
                                 true,
                         },
                         {
                             type:
                                 'TextBlock',
+
                             text:
                                 previousValue,
+
                             wrap:
                                 true,
+
                             isSubtle:
                                 true,
+
                             spacing:
                                 'Small',
                         },
@@ -872,28 +1807,37 @@ function buildChangeBlock(
                 {
                     type:
                         'Column',
+
                     width:
                         'stretch',
+
                     items: [
                         {
                             type:
                                 'TextBlock',
+
                             text:
                                 'Current',
+
                             size:
                                 'Small',
+
                             isSubtle:
                                 true,
                         },
                         {
                             type:
                                 'TextBlock',
+
                             text:
                                 currentValue,
+
                             wrap:
                                 true,
+
                             weight:
                                 'Bolder',
+
                             spacing:
                                 'Small',
                         },
@@ -911,10 +1855,13 @@ function buildChangeBlock(
         {
             type:
                 'Container',
+
             separator:
                 true,
+
             spacing:
                 'Medium',
+
             items:
                 content,
         },
@@ -924,35 +1871,45 @@ function buildChangeBlock(
 function buildChangedAdaptiveCard(record) {
     const changedFields =
         Array.isArray(
-            record.changedFields,
+            record
+                .changedFields,
         )
-            ? record.changedFields
-                .filter(Boolean)
+            ? record
+                .changedFields
+                .filter(
+                    Boolean,
+                )
             : [];
 
     const visibleChangedFields =
-        changedFields.slice(
-            0,
-            TEAMS_MAX_CHANGE_BLOCKS,
-        );
+        changedFields
+            .slice(
+                0,
+                TEAMS_MAX_CHANGE_BLOCKS,
+            );
 
     const hiddenChangeCount =
         Math.max(
             0,
             changedFields.length
-            - visibleChangedFields.length,
+            - visibleChangedFields
+                .length,
         );
 
     const changeItems = [
         {
             type:
                 'TextBlock',
+
             text:
                 'CHANGES DETECTED',
+
             weight:
                 'Bolder',
+
             size:
                 'Small',
+
             color:
                 'Warning',
         },
@@ -964,75 +1921,95 @@ function buildChangedAdaptiveCard(record) {
                 field,
                 index,
             ) => {
-                changeItems.push(
-                    ...buildChangeBlock(
-                        field,
-                        record.previous
-                        ?? {},
-                        record,
-                        {
-                            separator:
-                                index > 0,
-                        },
-                    ),
-                );
+                changeItems
+                    .push(
+                        ...buildChangeBlock(
+                            field,
+                            record.previous
+                            ?? {},
+                            record,
+                            {
+                                separator:
+                                    index > 0,
+                            },
+                        ),
+                    );
             },
         );
 
     if (
         hiddenChangeCount > 0
     ) {
-        changeItems.push({
-            type:
-                'TextBlock',
-            text:
-                `+ ${hiddenChangeCount} additional changed field(s) are available in the Actor dataset.`,
-            isSubtle:
-                true,
-            size:
-                'Small',
-            wrap:
-                true,
-            spacing:
-                'Medium',
-        });
+        changeItems
+            .push({
+                type:
+                    'TextBlock',
+
+                text:
+                    `+ ${hiddenChangeCount} additional changed field(s) are available in the Actor dataset.`,
+
+                isSubtle:
+                    true,
+
+                size:
+                    'Small',
+
+                wrap:
+                    true,
+
+                spacing:
+                    'Medium',
+            });
     }
 
     return {
         $schema:
             'http://adaptivecards.io/schemas/adaptive-card.json',
+
         type:
             'AdaptiveCard',
+
         version:
             '1.2',
+
         body: [
             {
                 type:
                     'Container',
+
                 items: [
                     {
                         type:
                             'TextBlock',
+
                         text:
                             'COSMETICS REGISTRATION CHANGED',
+
                         weight:
                             'Bolder',
+
                         size:
                             'Medium',
+
                         color:
                             'Warning',
+
                         wrap:
                             true,
                     },
                     {
                         type:
                             'TextBlock',
+
                         text:
                             'Changes detected in an existing BPOM registration',
+
                         isSubtle:
                             true,
+
                         spacing:
                             'Small',
+
                         wrap:
                             true,
                     },
@@ -1041,61 +2018,78 @@ function buildChangedAdaptiveCard(record) {
             {
                 type:
                     'Container',
+
                 separator:
                     true,
+
                 spacing:
                     'Medium',
+
                 items: [
                     {
                         type:
                             'TextBlock',
+
                         text:
                             cardText(
                                 record.brand,
                                 'UNKNOWN BRAND',
                             ),
+
                         weight:
                             'Bolder',
+
                         size:
                             'Large',
+
                         wrap:
                             true,
                     },
                     {
                         type:
                             'TextBlock',
+
                         text:
                             cardText(
                                 record.productName,
                                 'Unnamed product',
                             ),
+
                         weight:
                             'Bolder',
+
                         wrap:
                             true,
+
                         spacing:
                             'Small',
                     },
                     {
                         type:
                             'FactSet',
+
                         spacing:
                             'Medium',
+
                         facts: [
                             {
                                 title:
                                     'NIE',
+
                                 value:
                                     cardText(
-                                        record.registrationNumber,
+                                        record
+                                            .registrationNumber,
                                     ),
                             },
                             {
                                 title:
                                     'Issued Date',
+
                                 value:
                                     formatDateForCard(
-                                        record.issuedDate,
+                                        record
+                                            .issuedDate,
                                     ),
                             },
                         ],
@@ -1105,44 +2099,59 @@ function buildChangedAdaptiveCard(record) {
             {
                 type:
                     'Container',
+
                 separator:
                     true,
+
                 spacing:
                     'Medium',
+
                 items:
                     changeItems,
             },
             {
                 type:
                     'Container',
+
                 separator:
                     true,
+
                 spacing:
                     'Medium',
+
                 items: [
                     {
                         type:
                             'TextBlock',
+
                         text:
                             'Detected',
+
                         size:
                             'Small',
+
                         isSubtle:
                             true,
+
                         weight:
                             'Bolder',
                     },
                     {
                         type:
                             'TextBlock',
+
                         text:
                             formatJakartaTimestamp(
-                                record.detectedAt,
+                                record
+                                    .detectedAt,
                             ),
+
                         size:
                             'Small',
+
                         isSubtle:
                             true,
+
                         spacing:
                             'None',
                     },
@@ -1155,7 +2164,7 @@ function buildChangedAdaptiveCard(record) {
 function buildTeamsWebhookPayload(record) {
     const card =
         record.eventType
-            === 'NEW'
+        === 'NEW'
             ? buildNewAdaptiveCard(
                 record,
             )
@@ -1166,12 +2175,15 @@ function buildTeamsWebhookPayload(record) {
     return {
         type:
             'message',
+
         attachments: [
             {
                 contentType:
                     'application/vnd.microsoft.card.adaptive',
+
                 contentUrl:
                     null,
+
                 content:
                     card,
             },
@@ -1184,9 +2196,11 @@ async function postTeamsNotification(
     record,
     teamsStats,
 ) {
-    teamsStats.attempted++;
+    teamsStats
+        .attempted++;
 
     const maxAttempts = 3;
+
     let lastError = '';
 
     for (
@@ -1197,7 +2211,8 @@ async function postTeamsNotification(
         if (
             attempt > 1
         ) {
-            teamsStats.retries++;
+            teamsStats
+                .retries++;
         }
 
         const controller =
@@ -1218,16 +2233,19 @@ async function postTeamsNotification(
                     {
                         method:
                             'POST',
+
                         headers: {
                             'Content-Type':
                                 'application/json',
                         },
+
                         body:
                             JSON.stringify(
                                 buildTeamsWebhookPayload(
                                     record,
                                 ),
                             ),
+
                         signal:
                             controller
                                 .signal,
@@ -1244,15 +2262,20 @@ async function postTeamsNotification(
             if (
                 response.ok
             ) {
-                teamsStats.succeeded++;
+                teamsStats
+                    .succeeded++;
 
                 log.info(
                     'Teams notification delivered.',
                     {
                         eventType:
-                            record.eventType,
+                            record
+                                .eventType,
+
                         registrationNumber:
-                            record.registrationNumber,
+                            record
+                                .registrationNumber,
+
                         attempt,
                     },
                 );
@@ -1264,20 +2287,24 @@ async function postTeamsNotification(
                 `HTTP ${response.status}`
                 + (
                     responseText
-                        ? ` - ${cardText(responseText, '', 300)}`
+                        ? ` - ${cardText(
+                            responseText,
+                            '',
+                            300,
+                        )}`
                         : ''
                 );
 
             const retryable =
                 response.status
-                    === 429
+                === 429
                 || response.status
-                    >= 500;
+                >= 500;
 
             if (
                 !retryable
                 || attempt
-                    >= maxAttempts
+                >= maxAttempts
             ) {
                 break;
             }
@@ -1288,11 +2315,12 @@ async function postTeamsNotification(
 
             if (
                 response.status
-                    === 429
+                === 429
             ) {
                 const retryAfter =
                     Number(
-                        response.headers
+                        response
+                            .headers
                             .get(
                                 'retry-after',
                             ),
@@ -1307,7 +2335,7 @@ async function postTeamsNotification(
                     retryDelayMs =
                         Math.min(
                             retryAfter
-                                * 1000,
+                            * 1000,
                             15000,
                         );
                 }
@@ -1319,7 +2347,7 @@ async function postTeamsNotification(
         } catch (error) {
             lastError =
                 error?.name
-                    === 'AbortError'
+                === 'AbortError'
                     ? 'Request timed out after 15 seconds.'
                     : (
                         error
@@ -1331,7 +2359,7 @@ async function postTeamsNotification(
 
             if (
                 attempt
-                    >= maxAttempts
+                >= maxAttempts
             ) {
                 break;
             }
@@ -1347,18 +2375,25 @@ async function postTeamsNotification(
         }
     }
 
-    teamsStats.failed++;
+    teamsStats
+        .failed++;
 
     if (
-        teamsStats.failureSamples
+        teamsStats
+            .failureSamples
             .length < 20
     ) {
-        teamsStats.failureSamples
+        teamsStats
+            .failureSamples
             .push({
                 eventType:
-                    record.eventType,
+                    record
+                        .eventType,
+
                 registrationNumber:
-                    record.registrationNumber,
+                    record
+                        .registrationNumber,
+
                 error:
                     lastError,
             });
@@ -1368,9 +2403,13 @@ async function postTeamsNotification(
         'Teams notification delivery failed.',
         {
             eventType:
-                record.eventType,
+                record
+                    .eventType,
+
             registrationNumber:
-                record.registrationNumber,
+                record
+                    .registrationNumber,
+
             error:
                 lastError,
         },
@@ -1380,15 +2419,28 @@ async function postTeamsNotification(
 }
 
 async function visibleLocator(locator) {
-    const count = await locator.count();
+    const count =
+        await locator
+            .count();
 
-    for (let i = count - 1; i >= 0; i--) {
-        const item = locator.nth(i);
+    for (
+        let i =
+            count - 1;
+        i >= 0;
+        i--
+    ) {
+        const item =
+            locator
+                .nth(
+                    i,
+                );
 
         if (
             await item
                 .isVisible()
-                .catch(() => false)
+                .catch(
+                    () => false,
+                )
         ) {
             return item;
         }
@@ -1398,43 +2450,68 @@ async function visibleLocator(locator) {
 }
 
 async function getProductTable(page) {
-    const tables = page
-        .locator('table')
-        .filter({
-            hasText: /Nomor Registrasi/i,
-        })
-        .filter({
-            hasText: /Nama Produk/i,
-        });
+    const tables =
+        page
+            .locator(
+                'table',
+            )
+            .filter({
+                hasText:
+                    /Nomor Registrasi/i,
+            })
+            .filter({
+                hasText:
+                    /Nama Produk/i,
+            });
 
-    let fallback = null;
-    const count = await tables.count();
+    let fallback =
+        null;
 
-    for (let i = 0; i < count; i++) {
-        const table = tables.nth(i);
+    const count =
+        await tables
+            .count();
+
+    for (
+        let i = 0;
+        i < count;
+        i++
+    ) {
+        const table =
+            tables
+                .nth(
+                    i,
+                );
 
         if (
             !await table
                 .isVisible()
-                .catch(() => false)
+                .catch(
+                    () => false,
+                )
         ) {
             continue;
         }
 
         if (!fallback) {
-            fallback = table;
+            fallback =
+                table;
         }
 
         if (
             await table
-                .locator('tbody tr')
-                .count() > 0
+                .locator(
+                    'tbody tr',
+                )
+                .count()
+            > 0
         ) {
             return table;
         }
     }
 
-    if (fallback) {
+    if (
+        fallback
+    ) {
         return fallback;
     }
 
@@ -1444,59 +2521,97 @@ async function getProductTable(page) {
 }
 
 async function waitForTable(page) {
-    await page.waitForSelector(
-        'table',
-        {
-            timeout: 30000,
-        },
-    );
+    await page
+        .waitForSelector(
+            'table',
+            {
+                timeout:
+                    30000,
+            },
+        );
 
     await page
         .waitForFunction(
-            () => [...document.querySelectorAll('table')]
-                .some((table) => {
-                    const headers = (
-                        table
-                            .querySelector('thead')
-                            ?.textContent
-                        || ''
-                    )
-                        .replace(/\s+/g, ' ')
-                        .trim();
+            () =>
+                [
+                    ...document
+                        .querySelectorAll(
+                            'table',
+                        ),
+                ]
+                    .some(
+                        (table) => {
+                            const headers =
+                                (
+                                    table
+                                        .querySelector(
+                                            'thead',
+                                        )
+                                        ?.textContent
+                                    || ''
+                                )
+                                    .replace(
+                                        /\s+/g,
+                                        ' ',
+                                    )
+                                    .trim();
 
-                    if (
-                        !/Nomor Registrasi/i.test(headers)
-                        || !/Nama Produk/i.test(headers)
-                    ) {
-                        return false;
-                    }
+                            if (
+                                !/Nomor Registrasi/i
+                                    .test(
+                                        headers,
+                                    )
+                                || !/Nama Produk/i
+                                    .test(
+                                        headers,
+                                    )
+                            ) {
+                                return false;
+                            }
 
-                    const rows =
-                        table.querySelectorAll(
-                            'tbody tr',
-                        );
+                            const rows =
+                                table
+                                    .querySelectorAll(
+                                        'tbody tr',
+                                    );
 
-                    if (rows.length > 0) {
-                        return true;
-                    }
+                            if (
+                                rows.length
+                                > 0
+                            ) {
+                                return true;
+                            }
 
-                    const body = (
-                        table
-                            .querySelector('tbody')
-                            ?.textContent
-                        || ''
-                    )
-                        .replace(/\s+/g, ' ')
-                        .trim();
+                            const body =
+                                (
+                                    table
+                                        .querySelector(
+                                            'tbody',
+                                        )
+                                        ?.textContent
+                                    || ''
+                                )
+                                    .replace(
+                                        /\s+/g,
+                                        ' ',
+                                    )
+                                    .trim();
 
-                    return /tidak ada data|no data|data kosong/i
-                        .test(body);
-                }),
+                            return /tidak ada data|no data|data kosong/i
+                                .test(
+                                    body,
+                                );
+                        },
+                    ),
             {
-                timeout: 30000,
+                timeout:
+                    30000,
             },
         )
-        .catch(() => undefined);
+        .catch(
+            () =>
+                undefined,
+        );
 }
 
 async function applyFilter(
@@ -1505,14 +2620,17 @@ async function applyFilter(
     delay,
     crawlerLog,
 ) {
-    const open = await visibleLocator(
-        page.getByRole(
-            'button',
-            {
-                name: /^Filter$/i,
-            },
-        ),
-    );
+    const open =
+        await visibleLocator(
+            page
+                .getByRole(
+                    'button',
+                    {
+                        name:
+                            /^Filter$/i,
+                    },
+                ),
+        );
 
     if (!open) {
         throw new Error(
@@ -1520,38 +2638,53 @@ async function applyFilter(
         );
     }
 
-    await open.click();
-    await sleep(delay);
+    await open
+        .click();
+
+    await sleep(
+        delay,
+    );
 
     const placeholder =
-        inputPlaceholderFor(job.kind);
+        inputPlaceholderFor(
+            job.kind,
+        );
 
-    const field = placeholder
-        ? await visibleLocator(
-            page.locator(
-                `input[placeholder="${placeholder}"]`,
-            ),
-        )
-        : null;
+    const field =
+        placeholder
+            ? await visibleLocator(
+                page
+                    .locator(
+                        `input[placeholder="${placeholder}"]`,
+                    ),
+            )
+            : null;
 
     if (!field) {
         throw new Error(
             `BPOM filter field was not found: ${
-                placeholder || job.kind
+                placeholder
+                || job.kind
             }`,
         );
     }
 
-    await field.fill(job.value);
+    await field
+        .fill(
+            job.value,
+        );
 
-    const apply = await visibleLocator(
-        page.getByRole(
-            'button',
-            {
-                name: /^Filter$/i,
-            },
-        ),
-    );
+    const apply =
+        await visibleLocator(
+            page
+                .getByRole(
+                    'button',
+                    {
+                        name:
+                            /^Filter$/i,
+                    },
+                ),
+        );
 
     if (!apply) {
         throw new Error(
@@ -1559,265 +2692,394 @@ async function applyFilter(
         );
     }
 
-    await apply.click();
+    await apply
+        .click();
 
     await sleep(
-        Math.max(300, delay),
+        Math.max(
+            300,
+            delay,
+        ),
     );
 
     await page
         .waitForFunction(
-            () => [...document.querySelectorAll('table')]
-                .some((table) => {
-                    const headers = (
-                        table
-                            .querySelector('thead')
-                            ?.textContent
-                        || ''
-                    )
-                        .replace(/\s+/g, ' ')
-                        .trim();
+            () =>
+                [
+                    ...document
+                        .querySelectorAll(
+                            'table',
+                        ),
+                ]
+                    .some(
+                        (table) => {
+                            const headers =
+                                (
+                                    table
+                                        .querySelector(
+                                            'thead',
+                                        )
+                                        ?.textContent
+                                    || ''
+                                )
+                                    .replace(
+                                        /\s+/g,
+                                        ' ',
+                                    )
+                                    .trim();
 
-                    return (
-                        /Nomor Registrasi/i.test(
-                            headers,
-                        )
-                        && /Nama Produk/i.test(
-                            headers,
-                        )
-                        && table
-                            .querySelectorAll(
-                                'tbody tr',
-                            )
-                            .length > 0
-                    );
-                }),
+                            return (
+                                /Nomor Registrasi/i
+                                    .test(
+                                        headers,
+                                    )
+                                && /Nama Produk/i
+                                    .test(
+                                        headers,
+                                    )
+                                && table
+                                    .querySelectorAll(
+                                        'tbody tr',
+                                    )
+                                    .length
+                                    > 0
+                            );
+                        },
+                    ),
             {
-                timeout: 20000,
+                timeout:
+                    20000,
             },
         )
-        .catch(() =>
-            crawlerLog.debug(
-                'Filtered table did not signal readiness; continuing.',
-            ),
+        .catch(
+            () =>
+                crawlerLog
+                    .debug(
+                        'Filtered table did not signal readiness; continuing.',
+                    ),
         );
 }
 
 async function extractDetailPairs(dialog) {
-    return dialog.evaluate((root) => {
-        const result = {};
+    return dialog
+        .evaluate(
+            (root) => {
+                const result = {};
 
-        const cleanText = (value) =>
-            String(value ?? '')
-                .replace(/\u00a0/g, ' ')
-                .replace(/[ \t]+/g, ' ')
-                .trim();
+                const cleanText =
+                    (value) =>
+                        String(
+                            value
+                            ?? '',
+                        )
+                            .replace(
+                                /\u00a0/g,
+                                ' ',
+                            )
+                            .replace(
+                                /[ \t]+/g,
+                                ' ',
+                            )
+                            .trim();
 
-        const normalize = (value) =>
-            cleanText(value)
-                .replace(/:$/, '')
-                .toLowerCase();
-
-        const labels = [
-            'Nomor Registrasi',
-            'Nomor Izin Edar',
-            'NIE',
-            'Nama Produk',
-            'Merk',
-            'Merek',
-            'Kemasan',
-            'Bentuk Sediaan',
-            'Komposisi',
-            'Tanggal Permohonan',
-            'Tanggal Terbit',
-            'Tanggal Expired',
-            'Tanggal Kedaluwarsa',
-            'Nama Pendaftar',
-            'Pendaftar',
-            'Industri Kosmetika',
-            'Industri Pengemas Primer',
-            'Industri Pengemas Sekunder',
-            'Kits',
-            'Diterbitkan Oleh',
-            'Status',
-        ];
-
-        const known = new Map(
-            labels.map((label) => [
-                normalize(label),
-                label,
-            ]),
-        );
-
-        const put = (key, value) => {
-            const normalizedKey =
-                cleanText(key)
-                    .replace(/:$/, '');
-
-            const normalizedValue =
-                cleanText(value);
-
-            if (
-                normalizedKey
-                && normalizedValue
-                && normalizedKey
-                    !== normalizedValue
-                && !result[normalizedKey]
-            ) {
-                result[normalizedKey] =
-                    normalizedValue;
-            }
-        };
-
-        root.querySelectorAll('tr')
-            .forEach((tr) => {
-                const cells = [
-                    ...tr.querySelectorAll(
-                        ':scope > th, :scope > td',
-                    ),
-                ]
-                    .map((el) =>
+                const normalize =
+                    (value) =>
                         cleanText(
-                            el.innerText
-                            || el.textContent,
-                        ),
-                    )
-                    .filter(Boolean);
+                            value,
+                        )
+                            .replace(
+                                /:$/,
+                                '',
+                            )
+                            .toLowerCase();
 
-                if (cells.length >= 2) {
-                    put(
-                        cells[0],
-                        cells
-                            .slice(1)
-                            .join(' '),
-                    );
-                }
-            });
+                const labels = [
+                    'Nomor Registrasi',
+                    'Nomor Izin Edar',
+                    'NIE',
+                    'Nama Produk',
+                    'Merk',
+                    'Merek',
+                    'Kemasan',
+                    'Bentuk Sediaan',
+                    'Komposisi',
+                    'Tanggal Permohonan',
+                    'Tanggal Terbit',
+                    'Tanggal Expired',
+                    'Tanggal Kedaluwarsa',
+                    'Nama Pendaftar',
+                    'Pendaftar',
+                    'Industri Kosmetika',
+                    'Industri Pengemas Primer',
+                    'Industri Pengemas Sekunder',
+                    'Kits',
+                    'Diterbitkan Oleh',
+                    'Status',
+                ];
 
-        const lines = (
-            root.innerText
-            || root.textContent
-            || ''
-        )
-            .split(/\r?\n/)
-            .map(cleanText)
-            .filter(Boolean)
-            .filter(
-                (line) =>
-                    !/^Detail Produk$/i.test(line)
-                    && !/^Close$/i.test(line)
-                    && line !== '×',
-            );
-
-        for (
-            let i = 0;
-            i < lines.length;
-            i++
-        ) {
-            const line = lines[i];
-
-            const colon = line.match(
-                /^([^:]{2,50})\s*:\s*(.+)$/,
-            );
-
-            if (
-                colon
-                && known.has(
-                    normalize(colon[1]),
-                )
-            ) {
-                put(
-                    known.get(
-                        normalize(colon[1]),
-                    ),
-                    colon[2],
-                );
-
-                continue;
-            }
-
-            const label = known.get(
-                normalize(line),
-            );
-
-            if (!label) {
-                continue;
-            }
-
-            const values = [];
-
-            for (
-                let j = i + 1;
-                j < lines.length;
-                j++
-            ) {
-                const candidate =
-                    lines[j];
-
-                if (
-                    known.has(
-                        normalize(candidate),
-                    )
-                ) {
-                    break;
-                }
-
-                const nextColon =
-                    candidate.match(
-                        /^([^:]{2,50})\s*:/,
+                const known =
+                    new Map(
+                        labels
+                            .map(
+                                (label) => [
+                                    normalize(
+                                        label,
+                                    ),
+                                    label,
+                                ],
+                            ),
                     );
 
-                if (
-                    nextColon
-                    && known.has(
-                        normalize(
-                            nextColon[1],
-                        ),
+                const put =
+                    (
+                        key,
+                        value,
+                    ) => {
+                        const normalizedKey =
+                            cleanText(
+                                key,
+                            )
+                                .replace(
+                                    /:$/,
+                                    '',
+                                );
+
+                        const normalizedValue =
+                            cleanText(
+                                value,
+                            );
+
+                        if (
+                            normalizedKey
+                            && normalizedValue
+                            && normalizedKey
+                            !== normalizedValue
+                            && !result[
+                                normalizedKey
+                            ]
+                        ) {
+                            result[
+                                normalizedKey
+                            ] =
+                                normalizedValue;
+                        }
+                    };
+
+                root
+                    .querySelectorAll(
+                        'tr',
                     )
+                    .forEach(
+                        (tr) => {
+                            const cells = [
+                                ...tr
+                                    .querySelectorAll(
+                                        ':scope > th, :scope > td',
+                                    ),
+                            ]
+                                .map(
+                                    (el) =>
+                                        cleanText(
+                                            el.innerText
+                                            || el.textContent,
+                                        ),
+                                )
+                                .filter(
+                                    Boolean,
+                                );
+
+                            if (
+                                cells.length
+                                >= 2
+                            ) {
+                                put(
+                                    cells[0],
+                                    cells
+                                        .slice(1)
+                                        .join(
+                                            ' ',
+                                        ),
+                                );
+                            }
+                        },
+                    );
+
+                const lines =
+                    (
+                        root.innerText
+                        || root.textContent
+                        || ''
+                    )
+                        .split(
+                            /\r?\n/,
+                        )
+                        .map(
+                            cleanText,
+                        )
+                        .filter(
+                            Boolean,
+                        )
+                        .filter(
+                            (line) =>
+                                !/^Detail Produk$/i
+                                    .test(
+                                        line,
+                                    )
+                                && !/^Close$/i
+                                    .test(
+                                        line,
+                                    )
+                                && line
+                                    !== '×',
+                        );
+
+                for (
+                    let i = 0;
+                    i < lines.length;
+                    i++
                 ) {
-                    break;
+                    const line =
+                        lines[i];
+
+                    const colon =
+                        line.match(
+                            /^([^:]{2,50})\s*:\s*(.+)$/,
+                        );
+
+                    if (
+                        colon
+                        && known.has(
+                            normalize(
+                                colon[1],
+                            ),
+                        )
+                    ) {
+                        put(
+                            known.get(
+                                normalize(
+                                    colon[1],
+                                ),
+                            ),
+                            colon[2],
+                        );
+
+                        continue;
+                    }
+
+                    const label =
+                        known.get(
+                            normalize(
+                                line,
+                            ),
+                        );
+
+                    if (!label) {
+                        continue;
+                    }
+
+                    const values = [];
+
+                    for (
+                        let j =
+                            i + 1;
+                        j < lines.length;
+                        j++
+                    ) {
+                        const candidate =
+                            lines[j];
+
+                        if (
+                            known.has(
+                                normalize(
+                                    candidate,
+                                ),
+                            )
+                        ) {
+                            break;
+                        }
+
+                        const nextColon =
+                            candidate
+                                .match(
+                                    /^([^:]{2,50})\s*:/,
+                                );
+
+                        if (
+                            nextColon
+                            && known.has(
+                                normalize(
+                                    nextColon[
+                                        1
+                                    ],
+                                ),
+                            )
+                        ) {
+                            break;
+                        }
+
+                        values
+                            .push(
+                                candidate,
+                            );
+                    }
+
+                    if (
+                        values.length
+                    ) {
+                        put(
+                            label,
+                            values
+                                .join(
+                                    ' ',
+                                ),
+                        );
+                    }
                 }
 
-                values.push(candidate);
-            }
-
-            if (values.length) {
-                put(
-                    label,
-                    values.join(' '),
-                );
-            }
-        }
-
-        return result;
-    });
+                return result;
+            },
+        );
 }
 
 async function getVisibleDialog(page) {
-    const candidates = page.locator(
-        '.modal:visible, [role="dialog"]:visible',
-    );
+    const candidates =
+        page
+            .locator(
+                '.modal:visible, [role="dialog"]:visible',
+            );
 
     const count =
-        await candidates.count();
+        await candidates
+            .count();
 
     for (
-        let i = count - 1;
+        let i =
+            count - 1;
         i >= 0;
         i--
     ) {
         const dialog =
-            candidates.nth(i);
+            candidates
+                .nth(
+                    i,
+                );
 
-        const text = clean(
-            await dialog
-                .innerText()
-                .catch(() => ''),
-        );
+        const text =
+            clean(
+                await dialog
+                    .innerText()
+                    .catch(
+                        () => '',
+                    ),
+            );
 
         if (
-            /detail produk/i.test(text)
-            || text.length > 20
+            /detail produk/i
+                .test(
+                    text,
+                )
+            || text.length
+            > 20
         ) {
             return dialog;
         }
@@ -1854,9 +3116,10 @@ async function waitForBpomUiIdle(
                             .querySelectorAll(
                                 '.blockUI.blockOverlay, .blockUI.blockMsg, .dataTables_processing',
                             ),
-                    ].some(
-                        isVisible,
-                    );
+                    ]
+                        .some(
+                            isVisible,
+                        );
 
                 const modalVisible =
                     [
@@ -1864,9 +3127,10 @@ async function waitForBpomUiIdle(
                             .querySelectorAll(
                                 '#modalDetail, .modal.show, .modal[aria-modal="true"]',
                             ),
-                    ].some(
-                        isVisible,
-                    );
+                    ]
+                        .some(
+                            isVisible,
+                        );
 
                 return (
                     !blockingOverlayVisible
@@ -1879,8 +3143,12 @@ async function waitForBpomUiIdle(
                     timeoutMs,
             },
         )
-        .then(() => true)
-        .catch(() => false);
+        .then(
+            () => true,
+        )
+        .catch(
+            () => false,
+        );
 }
 
 async function waitForBlockingOverlayToClear(
@@ -1910,9 +3178,10 @@ async function waitForBlockingOverlayToClear(
                         .querySelectorAll(
                             '.blockUI.blockOverlay, .blockUI.blockMsg, .dataTables_processing',
                         ),
-                ].some(
-                    isVisible,
-                );
+                ]
+                    .some(
+                        isVisible,
+                    );
             },
             undefined,
             {
@@ -1920,78 +3189,85 @@ async function waitForBlockingOverlayToClear(
                     timeoutMs,
             },
         )
-        .then(() => true)
-        .catch(() => false);
+        .then(
+            () => true,
+        )
+        .catch(
+            () => false,
+        );
 }
 
-async function requestFrameworkModalHide(
-    page,
-) {
+async function requestFrameworkModalHide(page) {
     return page
-        .evaluate(() => {
-            const modal =
-                document
-                    .querySelector(
-                        '#modalDetail',
-                    );
-
-            if (!modal) {
-                return 'NO_MODAL';
-            }
-
-            try {
-                if (
-                    window
-                        .bootstrap
-                        ?.Modal
-                ) {
-                    const instance =
-                        window
-                            .bootstrap
-                            .Modal
-                            .getInstance(
-                                modal,
-                            )
-                        || window
-                            .bootstrap
-                            .Modal
-                            .getOrCreateInstance(
-                                modal,
-                            );
-
-                    instance.hide();
-
-                    return 'BOOTSTRAP';
-                }
-            } catch {
-                // Continue to jQuery fallback.
-            }
-
-            try {
-                const jq =
-                    window.jQuery
-                    || window.$;
-
-                if (
-                    jq
-                    && typeof jq
-                        .fn
-                        ?.modal
-                        === 'function'
-                ) {
-                    jq(modal)
-                        .modal(
-                            'hide',
+        .evaluate(
+            () => {
+                const modal =
+                    document
+                        .querySelector(
+                            '#modalDetail',
                         );
 
-                    return 'JQUERY';
+                if (!modal) {
+                    return 'NO_MODAL';
                 }
-            } catch {
-                // Continue to close button.
-            }
 
-            return 'UNAVAILABLE';
-        })
+                try {
+                    if (
+                        window
+                            .bootstrap
+                            ?.Modal
+                    ) {
+                        const instance =
+                            window
+                                .bootstrap
+                                .Modal
+                                .getInstance(
+                                    modal,
+                                )
+                            || window
+                                .bootstrap
+                                .Modal
+                                .getOrCreateInstance(
+                                    modal,
+                                );
+
+                        instance
+                            .hide();
+
+                        return 'BOOTSTRAP';
+                    }
+                } catch {
+                    // Continue to jQuery fallback.
+                }
+
+                try {
+                    const jq =
+                        window.jQuery
+                        || window.$;
+
+                    if (
+                        jq
+                        && typeof jq
+                            .fn
+                            ?.modal
+                        === 'function'
+                    ) {
+                        jq(
+                            modal,
+                        )
+                            .modal(
+                                'hide',
+                            );
+
+                        return 'JQUERY';
+                    }
+                } catch {
+                    // Continue to close button.
+                }
+
+                return 'UNAVAILABLE';
+            },
+        )
         .catch(
             () => 'ERROR',
         );
@@ -2004,18 +3280,26 @@ async function cleanupDetailUi(
         force = false,
     } = {},
 ) {
-    let forcedCleanup = false;
+    let forcedCleanup =
+        false;
+
     let frameworkHideMethod =
         'NOT_NEEDED';
 
     const initialDialog =
         await visibleLocator(
-            page.locator(
-                '#modalDetail:visible, .modal:visible',
-            ),
-        ).catch(() => null);
+            page
+                .locator(
+                    '#modalDetail:visible, .modal:visible',
+                ),
+        )
+            .catch(
+                () => null,
+            );
 
-    if (initialDialog) {
+    if (
+        initialDialog
+    ) {
         frameworkHideMethod =
             await requestFrameworkModalHide(
                 page,
@@ -2023,19 +3307,27 @@ async function cleanupDetailUi(
 
         await page
             .keyboard
-            .press('Escape')
-            .catch(() => undefined);
+            .press(
+                'Escape',
+            )
+            .catch(
+                () => undefined,
+            );
 
         const dialogStillVisible =
             await visibleLocator(
-                page.locator(
-                    '#modalDetail:visible, .modal:visible',
-                ),
-            ).catch(
-                () => null,
-            );
+                page
+                    .locator(
+                        '#modalDetail:visible, .modal:visible',
+                    ),
+            )
+                .catch(
+                    () => null,
+                );
 
-        if (dialogStillVisible) {
+        if (
+            dialogStillVisible
+        ) {
             const closeByRole =
                 await visibleLocator(
                     dialogStillVisible
@@ -2046,9 +3338,10 @@ async function cleanupDetailUi(
                                     /^(Close|Tutup)$/i,
                             },
                         ),
-                ).catch(
-                    () => null,
-                );
+                )
+                    .catch(
+                        () => null,
+                    );
 
             const closeBySelector =
                 closeByRole
@@ -2058,15 +3351,18 @@ async function cleanupDetailUi(
                             .locator(
                                 '[data-bs-dismiss="modal"], [data-dismiss="modal"], .btn-close, button.close',
                             ),
-                    ).catch(
-                        () => null,
-                    );
+                    )
+                        .catch(
+                            () => null,
+                        );
 
             const close =
                 closeByRole
                 || closeBySelector;
 
-            if (close) {
+            if (
+                close
+            ) {
                 await close
                     .click({
                         timeout:
@@ -2081,7 +3377,9 @@ async function cleanupDetailUi(
     } else {
         await page
             .keyboard
-            .press('Escape')
+            .press(
+                'Escape',
+            )
             .catch(
                 () => undefined,
             );
@@ -2096,6 +3394,7 @@ async function cleanupDetailUi(
             .waitFor({
                 state:
                     'hidden',
+
                 timeout:
                     2200,
             })
@@ -2121,66 +3420,79 @@ async function cleanupDetailUi(
         force
         && !modalHidden
     ) {
-        forcedCleanup = true;
+        forcedCleanup =
+            true;
 
         await page
-            .evaluate(() => {
-                const modal =
+            .evaluate(
+                () => {
+                    const modal =
+                        document
+                            .querySelector(
+                                '#modalDetail',
+                            );
+
+                    if (
+                        modal
+                    ) {
+                        modal
+                            .classList
+                            .remove(
+                                'show',
+                            );
+
+                        modal
+                            .setAttribute(
+                                'aria-hidden',
+                                'true',
+                            );
+
+                        modal
+                            .removeAttribute(
+                                'aria-modal',
+                            );
+
+                        modal
+                            .style
+                            .display =
+                                'none';
+                    }
+
                     document
-                        .querySelector(
-                            '#modalDetail',
-                        );
-
-                if (modal) {
-                    modal.classList
+                        .body
+                        .classList
                         .remove(
-                            'show',
+                            'modal-open',
                         );
 
-                    modal.setAttribute(
-                        'aria-hidden',
-                        'true',
-                    );
+                    document
+                        .body
+                        .style
+                        .removeProperty(
+                            'padding-right',
+                        );
 
-                    modal.removeAttribute(
-                        'aria-modal',
-                    );
+                    document
+                        .body
+                        .style
+                        .removeProperty(
+                            'overflow',
+                        );
 
-                    modal.style
-                        .display =
-                            'none';
-                }
-
-                document.body
-                    .classList
-                    .remove(
-                        'modal-open',
-                    );
-
-                document.body
-                    .style
-                    .removeProperty(
-                        'padding-right',
-                    );
-
-                document.body
-                    .style
-                    .removeProperty(
-                        'overflow',
-                    );
-
-                document
-                    .querySelectorAll(
-                        '.modal-backdrop',
-                    )
-                    .forEach(
-                        (element) =>
-                            element
-                                .remove(),
-                    );
-            })
+                    document
+                        .querySelectorAll(
+                            '.modal-backdrop',
+                        )
+                        .forEach(
+                            (element) =>
+                                element
+                                    .remove(),
+                        );
+                },
+            )
             .catch(
-                () => undefined,
+                () =>
+                    undefined,
             );
 
         modalHidden =
@@ -2201,14 +3513,17 @@ async function cleanupDetailUi(
             );
     }
 
-    if (forcedCleanup) {
-        crawlerLog.debug(
-            'Forced cleanup of stale BPOM modal state.',
-            {
-                frameworkHideMethod,
-                overlayGone,
-            },
-        );
+    if (
+        forcedCleanup
+    ) {
+        crawlerLog
+            .debug(
+                'Forced cleanup of stale BPOM modal state.',
+                {
+                    frameworkHideMethod,
+                    overlayGone,
+                },
+            );
     }
 
     return {
@@ -2227,7 +3542,9 @@ async function enrichFromRow(
     detailStats,
 ) {
     const maxAttempts = 2;
-    let lastError = null;
+
+    let lastError =
+        null;
 
     for (
         let attempt = 1;
@@ -2235,7 +3552,9 @@ async function enrichFromRow(
         attempt++
     ) {
         try {
-            if (attempt > 1) {
+            if (
+                attempt > 1
+            ) {
                 detailStats
                     .localRetries++;
 
@@ -2249,7 +3568,8 @@ async function enrichFromRow(
                 page,
                 crawlerLog,
                 {
-                    force: true,
+                    force:
+                        true,
                 },
             );
 
@@ -2259,31 +3579,37 @@ async function enrichFromRow(
                     6000,
                 );
 
-            if (!uiReady) {
+            if (
+                !uiReady
+            ) {
                 throw new Error(
                     'BPOM UI did not become idle before opening product detail.',
                 );
             }
 
             const clickable =
-                row.locator(
-                    'a, button, [role="button"]',
-                );
+                row
+                    .locator(
+                        'a, button, [role="button"]',
+                    );
 
             const count =
                 await clickable
                     .count();
 
-            crawlerLog.debug(
-                'Opening BPOM product detail.',
-                {
-                    clickableCount:
-                        count,
-                    attempt,
-                },
-            );
+            crawlerLog
+                .debug(
+                    'Opening BPOM product detail.',
+                    {
+                        clickableCount:
+                            count,
+                        attempt,
+                    },
+                );
 
-            if (count > 0) {
+            if (
+                count > 0
+            ) {
                 await clickable
                     .first()
                     .click({
@@ -2291,10 +3617,11 @@ async function enrichFromRow(
                             8000,
                     });
             } else {
-                await row.click({
-                    timeout:
-                        8000,
-                });
+                await row
+                    .click({
+                        timeout:
+                            8000,
+                    });
             }
 
             await page
@@ -2316,11 +3643,13 @@ async function enrichFromRow(
                 .waitFor({
                     state:
                         'visible',
+
                     timeout:
                         8000,
                 })
                 .catch(
-                    () => undefined,
+                    () =>
+                        undefined,
                 );
 
             const dialog =
@@ -2328,7 +3657,9 @@ async function enrichFromRow(
                     page,
                 );
 
-            if (!dialog) {
+            if (
+                !dialog
+            ) {
                 throw new Error(
                     'BPOM product detail dialog did not become visible.',
                 );
@@ -2343,18 +3674,19 @@ async function enrichFromRow(
                         ),
                 );
 
-            crawlerLog.debug(
-                'BPOM product detail dialog detected.',
-                {
-                    textPreview:
-                        dialogText
-                            .slice(
-                                0,
-                                2000,
-                            ),
-                    attempt,
-                },
-            );
+            crawlerLog
+                .debug(
+                    'BPOM product detail dialog detected.',
+                    {
+                        textPreview:
+                            dialogText
+                                .slice(
+                                    0,
+                                    2000,
+                                ),
+                        attempt,
+                    },
+                );
 
             const rawPairs =
                 await extractDetailPairs(
@@ -2366,71 +3698,82 @@ async function enrichFromRow(
                     rawPairs,
                 );
 
-            crawlerLog.debug(
-                'BPOM product detail raw fields.',
-                {
-                    rawPairs,
-                },
-            );
+            crawlerLog
+                .debug(
+                    'BPOM product detail raw fields.',
+                    {
+                        rawPairs,
+                    },
+                );
 
-            crawlerLog.debug(
-                'BPOM mapped product details.',
-                {
-                    details,
-                },
-            );
+            crawlerLog
+                .debug(
+                    'BPOM mapped product details.',
+                    {
+                        details,
+                    },
+                );
 
-            detailStats.succeeded++;
+            detailStats
+                .succeeded++;
 
             return {
                 ...details,
+
                 __detailFetched:
                     true,
             };
         } catch (error) {
-            lastError = error;
+            lastError =
+                error;
 
-            crawlerLog.warning(
-                'Could not open/parse BPOM product detail.',
-                {
-                    attempt,
-                    maxAttempts,
-                    error:
-                        error
-                            ?.message
-                        || String(
-                            error,
-                        ),
-                },
-            );
+            crawlerLog
+                .warning(
+                    'Could not open/parse BPOM product detail.',
+                    {
+                        attempt,
+                        maxAttempts,
+
+                        error:
+                            error
+                                ?.message
+                            || String(
+                                error,
+                            ),
+                    },
+                );
         } finally {
             await cleanupDetailUi(
                 page,
                 crawlerLog,
                 {
-                    force: true,
+                    force:
+                        true,
                 },
             );
         }
     }
 
-    detailStats.failed++;
+    detailStats
+        .failed++;
 
-    crawlerLog.warning(
-        'Skipping BPOM product detail after local retries.',
-        {
-            error:
-                lastError
-                    ?.message
-                || String(
+    crawlerLog
+        .warning(
+            'Skipping BPOM product detail after local retries.',
+            {
+                error:
                     lastError
-                    || '',
-                ),
-        },
-    );
+                        ?.message
+                    || String(
+                        lastError
+                        || '',
+                    ),
+            },
+        );
 
     return {
-        __detailFetched: false,
+        __detailFetched:
+            false,
     };
 }
 
@@ -2449,6 +3792,7 @@ async function extractCurrentPage(
         requestDelayMs,
         detailStats,
         detailDecisionRegistrationNumbers,
+        sourceFilterStats,
     },
     crawlerLog,
 ) {
@@ -2458,32 +3802,40 @@ async function extractCurrentPage(
         );
 
     const rows =
-        table.locator(
-            'tbody tr',
-        );
+        table
+            .locator(
+                'tbody tr',
+            );
 
     const results = [];
 
     const rowCount =
-        await rows.count();
+        await rows
+            .count();
 
     for (
         let i = 0;
         i < rowCount
         && results.length
-            < maxRemaining;
+        < maxRemaining;
         i++
     ) {
         const row =
-            rows.nth(i);
+            rows
+                .nth(
+                    i,
+                );
 
         const cells =
             await row
-                .locator('td')
+                .locator(
+                    'td',
+                )
                 .allInnerTexts();
 
         if (
-            cells.length < 3
+            cells.length
+            < 3
         ) {
             continue;
         }
@@ -2492,8 +3844,12 @@ async function extractCurrentPage(
             /tidak ada data|no data|data tidak/i
                 .test(
                     cells
-                        .map(clean)
-                        .join(' '),
+                        .map(
+                            clean,
+                        )
+                        .join(
+                            ' ',
+                        ),
                 )
         ) {
             continue;
@@ -2523,22 +3879,31 @@ async function extractCurrentPage(
                     cells[0],
                 )
                 || 'KO',
+
             registrationNumber:
                 registration
                     .registrationNumber,
+
             issuedDate:
                 registration
                     .issuedDate,
+
             productName:
                 product
                     .productName,
+
             brand:
-                product.brand,
+                product
+                    .brand,
+
             packaging:
-                product.packaging,
+                product
+                    .packaging,
+
             registrant:
                 registrant
                     .registrant,
+
             registrantLocation:
                 registrant
                     .registrantLocation,
@@ -2549,6 +3914,57 @@ async function extractCurrentPage(
                 .registrationNumber
         ) {
             continue;
+        }
+
+        sourceFilterStats
+            .scannedRows++;
+
+        /*
+         * Source Filter Integrity Guard
+         *
+         * BPOM occasionally returns stale / unrelated rows after
+         * applying a filter. Do not trust the UI filter blindly.
+         *
+         * For fields already available in listing rows we verify
+         * the result immediately and reject mismatches before they
+         * can reach snapshot classification.
+         *
+         * Composition is verified after detail enrichment because
+         * it is not available in the listing table.
+         */
+        if (
+            job.kind
+            !== 'composition'
+        ) {
+            const listingMatch =
+                evaluateJobMatch(
+                    list,
+                    job,
+                );
+
+            if (
+                listingMatch
+                    .verifiable
+                && !listingMatch
+                    .matches
+            ) {
+                addSourceFilterMismatch(
+                    sourceFilterStats,
+                    job,
+                    list,
+                    'LISTING',
+                );
+
+                continue;
+            }
+
+            if (
+                !listingMatch
+                    .verifiable
+            ) {
+                sourceFilterStats
+                    .unverifiableRows++;
+            }
         }
 
         const previousEntry =
@@ -2620,7 +4036,7 @@ async function extractCurrentPage(
                     'ALWAYS';
             } else if (
                 detailStrategy
-                    === 'changesOnly'
+                === 'changesOnly'
                 && detectChanges
                 && (
                     !previousRecord
@@ -2636,7 +4052,7 @@ async function extractCurrentPage(
                         : 'LISTING_CHANGED';
             } else if (
                 detailStrategy
-                    === 'staleOnly'
+                === 'staleOnly'
             ) {
                 if (
                     !previousRecord
@@ -2664,9 +4080,9 @@ async function extractCurrentPage(
                         'NO_DETAIL_TIMESTAMP';
                 } else if (
                     previousDetailAgeDays
-                        === null
+                    === null
                     || previousDetailAgeDays
-                        >= detailMaxAgeDays
+                    >= detailMaxAgeDays
                 ) {
                     shouldFetchDetail =
                         true;
@@ -2682,12 +4098,12 @@ async function extractCurrentPage(
             if (
                 shouldFetchDetail
                 && detailStrategy
-                    === 'staleOnly'
+                === 'staleOnly'
                 && detailFetchLimitPerRun
-                    > 0
+                > 0
                 && detailStats
                     .requested
-                    >= detailFetchLimitPerRun
+                >= detailFetchLimitPerRun
             ) {
                 shouldFetchDetail =
                     false;
@@ -2772,14 +4188,16 @@ async function extractCurrentPage(
                     ],
                 );
 
-            detailValues[field] =
+            detailValues[
+                field
+            ] =
                 currentValue
                 || previousValue;
 
             if (
                 detail
                     .__detailFetched
-                    === true
+                === true
                 && currentValue
             ) {
                 currentKnownDetailFields
@@ -2794,7 +4212,7 @@ async function extractCurrentPage(
                 priorDetailKnown
                 || detail
                     .__detailFetched
-                    === true
+                === true
                 || currentKnownDetailFields
                     .size > 0,
             );
@@ -2802,49 +4220,100 @@ async function extractCurrentPage(
         const record = {
             ...list,
             ...detailValues,
+
             category:
                 'Kosmetika',
+
             source:
                 'BPOM RI - Cek Produk',
+
             sourceUrl:
                 BASE_URL,
+
             matchedBy: {
                 type:
                     job.kind,
+
                 value:
                     job.value,
             },
+
             scrapedAt:
                 isoNow(),
+
             __basicHash:
                 currentBasicHash,
+
             __detailHash:
                 detailHash(
                     detailValues,
                 ),
+
             __detailKnown:
                 currentDetailKnown,
-            __detailKnownFields:
-                [
-                    ...currentKnownDetailFields,
-                ],
+
+            __detailKnownFields: [
+                ...currentKnownDetailFields,
+            ],
+
             __detailFetched:
                 detail
                     .__detailFetched
                 === true,
         };
 
-        results.push(
-            record,
-        );
+        /*
+         * Composition filter cannot be verified from listing data.
+         * Verify it after detail data has been merged.
+         */
+        if (
+            job.kind
+            === 'composition'
+        ) {
+            const detailMatch =
+                evaluateJobMatch(
+                    record,
+                    job,
+                );
+
+            if (
+                detailMatch
+                    .verifiable
+                && !detailMatch
+                    .matches
+            ) {
+                addSourceFilterMismatch(
+                    sourceFilterStats,
+                    job,
+                    record,
+                    'DETAIL',
+                );
+
+                continue;
+            }
+
+            if (
+                !detailMatch
+                    .verifiable
+            ) {
+                sourceFilterStats
+                    .unverifiableRows++;
+            }
+        }
+
+        sourceFilterStats
+            .acceptedRows++;
+
+        results
+            .push(
+                record,
+            );
     }
 
     return results;
 }
 
-async function getPaginationSnapshot(
-    page,
-) {
+async function getPaginationSnapshot(page) {
     const table =
         await getProductTable(
             page,
@@ -2855,190 +4324,207 @@ async function getPaginationSnapshot(
 
     if (!table) {
         return {
-            activePage: '',
-            firstRow: '',
+            activePage:
+                '',
+
+            firstRow:
+                '',
+
             dataTablePage:
                 null,
+
             dataTablePages:
                 null,
+
             nextExists:
                 false,
+
             nextDisabled:
                 true,
         };
     }
 
-    return table.evaluate(
-        (tableElement) => {
-            const cleanText =
-                (value) =>
-                    String(
-                        value ?? '',
-                    )
-                        .replace(
-                            /\u00a0/g,
-                            ' ',
+    return table
+        .evaluate(
+            (tableElement) => {
+                const cleanText =
+                    (value) =>
+                        String(
+                            value
+                            ?? '',
                         )
-                        .replace(
-                            /\s+/g,
-                            ' ',
+                            .replace(
+                                /\u00a0/g,
+                                ' ',
+                            )
+                            .replace(
+                                /\s+/g,
+                                ' ',
+                            )
+                            .trim();
+
+                const wrapper =
+                    tableElement
+                        .closest(
+                            '.dataTables_wrapper',
                         )
-                        .trim();
-
-            const wrapper =
-                tableElement
-                    .closest(
-                        '.dataTables_wrapper',
-                    )
-                || tableElement
-                    .parentElement
-                    ?.closest(
-                        '.dataTables_wrapper',
-                    )
-                || tableElement
-                    .parentElement
-                || document;
-
-            const active =
-                wrapper
-                    .querySelector(
-                        '.paginate_button.current, .pagination .active',
-                    );
-
-            const next =
-                wrapper
-                    .querySelector(
-                        '.paginate_button.next, button[id$="_next"]',
-                    );
-
-            const firstRow =
-                tableElement
-                    .querySelector(
-                        'tbody tr',
-                    );
-
-            let dataTablePage =
-                null;
-
-            let dataTablePages =
-                null;
-
-            try {
-                const jq =
-                    window.jQuery
-                    || window.$;
-
-                if (
-                    jq
-                    && jq.fn
-                        ?.dataTable
-                        ?.isDataTable
-                    && jq.fn
-                        .dataTable
-                        .isDataTable(
-                            tableElement,
+                    || tableElement
+                        .parentElement
+                        ?.closest(
+                            '.dataTables_wrapper',
                         )
-                ) {
-                    const instance =
-                        jq(
-                            tableElement,
+                    || tableElement
+                        .parentElement
+                    || document;
+
+                const active =
+                    wrapper
+                        .querySelector(
+                            '.paginate_button.current, .pagination .active',
                         );
 
-                    const api =
-                        typeof instance
-                            .DataTable
+                const next =
+                    wrapper
+                        .querySelector(
+                            '.paginate_button.next, button[id$="_next"]',
+                        );
+
+                const firstRow =
+                    tableElement
+                        .querySelector(
+                            'tbody tr',
+                        );
+
+                let dataTablePage =
+                    null;
+
+                let dataTablePages =
+                    null;
+
+                try {
+                    const jq =
+                        window.jQuery
+                        || window.$;
+
+                    if (
+                        jq
+                        && jq.fn
+                            ?.dataTable
+                            ?.isDataTable
+                        && jq.fn
+                            .dataTable
+                            .isDataTable(
+                                tableElement,
+                            )
+                    ) {
+                        const instance =
+                            jq(
+                                tableElement,
+                            );
+
+                        const api =
+                            typeof instance
+                                .DataTable
                             === 'function'
-                            ? instance
-                                .DataTable()
-                            : instance
-                                .dataTable()
-                                .api();
+                                ? instance
+                                    .DataTable()
+                                : instance
+                                    .dataTable()
+                                    .api();
 
-                    const info =
-                        api
-                            .page
-                            .info();
+                        const info =
+                            api
+                                .page
+                                .info();
 
-                    dataTablePage =
-                        Number.isFinite(
-                            info
-                                ?.page,
-                        )
-                            ? info.page
-                            : null;
+                        dataTablePage =
+                            Number.isFinite(
+                                info
+                                    ?.page,
+                            )
+                                ? info
+                                    .page
+                                : null;
 
-                    dataTablePages =
-                        Number.isFinite(
-                            info
-                                ?.pages,
-                        )
-                            ? info.pages
-                            : null;
+                        dataTablePages =
+                            Number.isFinite(
+                                info
+                                    ?.pages,
+                            )
+                                ? info
+                                    .pages
+                                : null;
+                    }
+                } catch {
+                    // Visual fallback remains available.
                 }
-            } catch {
-                // Visual fallback remains available.
-            }
 
-            const nextClass =
-                cleanText(
-                    next
-                        ?.getAttribute(
-                            'class',
-                        ),
-                );
-
-            const dataTableAtEnd =
-                (
-                    dataTablePage
-                        !== null
-                    && dataTablePages
-                        !== null
-                    && dataTablePages
-                        > 0
-                    && dataTablePage
-                        >= dataTablePages
-                            - 1
-                );
-
-            const nextDisabled =
-                dataTableAtEnd
-                || !next
-                || next
-                    .hasAttribute(
-                        'disabled',
-                    )
-                || next
-                    .getAttribute(
-                        'aria-disabled',
-                    )
-                    === 'true'
-                || nextClass
-                    .split(' ')
-                    .includes(
-                        'disabled',
+                const nextClass =
+                    cleanText(
+                        next
+                            ?.getAttribute(
+                                'class',
+                            ),
                     );
 
-            return {
-                activePage:
-                    cleanText(
-                        active
-                            ?.textContent,
-                    ),
-                firstRow:
-                    cleanText(
-                        firstRow
-                            ?.textContent,
-                    ),
-                dataTablePage,
-                dataTablePages,
-                nextExists:
-                    Boolean(
-                        next,
-                    ),
-                nextDisabled,
-            };
-        },
-    );
+                const dataTableAtEnd =
+                    (
+                        dataTablePage
+                        !== null
+                        && dataTablePages
+                        !== null
+                        && dataTablePages
+                        > 0
+                        && dataTablePage
+                        >= dataTablePages
+                        - 1
+                    );
+
+                const nextDisabled =
+                    dataTableAtEnd
+                    || !next
+                    || next
+                        .hasAttribute(
+                            'disabled',
+                        )
+                    || next
+                        .getAttribute(
+                            'aria-disabled',
+                        )
+                    === 'true'
+                    || nextClass
+                        .split(
+                            ' ',
+                        )
+                        .includes(
+                            'disabled',
+                        );
+
+                return {
+                    activePage:
+                        cleanText(
+                            active
+                                ?.textContent,
+                        ),
+
+                    firstRow:
+                        cleanText(
+                            firstRow
+                                ?.textContent,
+                        ),
+
+                    dataTablePage,
+                    dataTablePages,
+
+                    nextExists:
+                        Boolean(
+                            next,
+                        ),
+
+                    nextDisabled,
+                };
+            },
+        );
 }
 
 function paginationMoved(
@@ -3047,31 +4533,41 @@ function paginationMoved(
 ) {
     return Boolean(
         (
-            before.dataTablePage
-                !== null
-            && current.dataTablePage
-                !== null
-            && current.dataTablePage
-                !== before.dataTablePage
+            before
+                .dataTablePage
+            !== null
+            && current
+                .dataTablePage
+            !== null
+            && current
+                .dataTablePage
+            !== before
+                .dataTablePage
         )
         || (
-            before.activePage
-            && current.activePage
-            && current.activePage
-                !== before.activePage
+            before
+                .activePage
+            && current
+                .activePage
+            && current
+                .activePage
+            !== before
+                .activePage
         )
         || (
-            before.firstRow
-            && current.firstRow
-            && current.firstRow
-                !== before.firstRow
+            before
+                .firstRow
+            && current
+                .firstRow
+            && current
+                .firstRow
+            !== before
+                .firstRow
         ),
     );
 }
 
-async function getVisibleNextButton(
-    page,
-) {
+async function getVisibleNextButton(page) {
     const table =
         await getProductTable(
             page,
@@ -3085,9 +4581,10 @@ async function getVisibleNextButton(
     }
 
     const wrapper =
-        table.locator(
-            'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " dataTables_wrapper ")][1]',
-        );
+        table
+            .locator(
+                'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " dataTables_wrapper ")][1]',
+            );
 
     if (
         await wrapper
@@ -3098,32 +4595,34 @@ async function getVisibleNextButton(
     ) {
         const localNext =
             await visibleLocator(
-                wrapper.locator(
-                    '.paginate_button.next, button[id$="_next"]',
-                ),
+                wrapper
+                    .locator(
+                        '.paginate_button.next, button[id$="_next"]',
+                    ),
             )
                 .catch(
                     () => null,
                 );
 
-        if (localNext) {
+        if (
+            localNext
+        ) {
             return localNext;
         }
     }
 
     return visibleLocator(
-        page.locator(
-            '.paginate_button.next:visible, button[id$="_next"]:visible',
-        ),
+        page
+            .locator(
+                '.paginate_button.next:visible, button[id$="_next"]:visible',
+            ),
     )
         .catch(
             () => null,
         );
 }
 
-async function triggerNextPageWithPlaywright(
-    page,
-) {
+async function triggerNextPageWithPlaywright(page) {
     const next =
         await getVisibleNextButton(
             page,
@@ -3133,6 +4632,7 @@ async function triggerNextPageWithPlaywright(
         return {
             triggered:
                 false,
+
             reason:
                 'NEXT_BUTTON_NOT_FOUND',
         };
@@ -3145,7 +4645,9 @@ async function triggerNextPageWithPlaywright(
                     'class',
                 ),
         )
-            .split(' ')
+            .split(
+                ' ',
+            )
             .filter(
                 Boolean,
             );
@@ -3160,35 +4662,40 @@ async function triggerNextPageWithPlaywright(
             .getAttribute(
                 'disabled',
             )
-            !== null
+        !== null
         || await next
             .getAttribute(
                 'aria-disabled',
             )
-            === 'true'
+        === 'true'
         || classNames
             .includes(
                 'disabled',
             );
 
-    if (disabled) {
+    if (
+        disabled
+    ) {
         return {
             triggered:
                 false,
+
             reason:
                 'NEXT_BUTTON_DISABLED',
         };
     }
 
     try {
-        await next.click({
-            timeout:
-                3000,
-        });
+        await next
+            .click({
+                timeout:
+                    3000,
+            });
 
         return {
             triggered:
                 true,
+
             reason:
                 'PLAYWRIGHT_CLICK',
         };
@@ -3196,8 +4703,10 @@ async function triggerNextPageWithPlaywright(
         return {
             triggered:
                 false,
+
             reason:
                 'PLAYWRIGHT_CLICK_FAILED',
+
             error:
                 error
                     ?.message
@@ -3208,9 +4717,7 @@ async function triggerNextPageWithPlaywright(
     }
 }
 
-async function triggerNextPageWithDataTablesApi(
-    page,
-) {
+async function triggerNextPageWithDataTablesApi(page) {
     const table =
         await getProductTable(
             page,
@@ -3223,136 +4730,150 @@ async function triggerNextPageWithDataTablesApi(
         return {
             triggered:
                 false,
+
             available:
                 false,
+
             reason:
                 'PRODUCT_TABLE_NOT_FOUND',
         };
     }
 
-    return table.evaluate(
-        (tableElement) => {
-            try {
-                const jq =
-                    window.jQuery
-                    || window.$;
+    return table
+        .evaluate(
+            (tableElement) => {
+                try {
+                    const jq =
+                        window.jQuery
+                        || window.$;
 
-                if (
-                    !jq
-                    || !jq.fn
-                        ?.dataTable
-                        ?.isDataTable
-                    || !jq.fn
-                        .dataTable
-                        .isDataTable(
+                    if (
+                        !jq
+                        || !jq.fn
+                            ?.dataTable
+                            ?.isDataTable
+                        || !jq.fn
+                            .dataTable
+                            .isDataTable(
+                                tableElement,
+                            )
+                    ) {
+                        return {
+                            triggered:
+                                false,
+
+                            available:
+                                false,
+
+                            reason:
+                                'DATATABLES_API_UNAVAILABLE',
+                        };
+                    }
+
+                    const instance =
+                        jq(
                             tableElement,
-                        )
-                ) {
-                    return {
-                        triggered:
-                            false,
-                        available:
-                            false,
-                        reason:
-                            'DATATABLES_API_UNAVAILABLE',
-                    };
-                }
+                        );
 
-                const instance =
-                    jq(
-                        tableElement,
-                    );
-
-                const api =
-                    typeof instance
-                        .DataTable
+                    const api =
+                        typeof instance
+                            .DataTable
                         === 'function'
-                        ? instance
-                            .DataTable()
-                        : instance
-                            .dataTable()
-                            .api();
+                            ? instance
+                                .DataTable()
+                            : instance
+                                .dataTable()
+                                .api();
 
-                const info =
-                    api
-                        .page
-                        .info();
+                    const info =
+                        api
+                            .page
+                            .info();
 
-                if (
-                    Number.isFinite(
-                        info
-                            ?.page,
-                    )
-                    && Number.isFinite(
-                        info
-                            ?.pages,
-                    )
-                    && info.pages
-                        > 0
-                    && info.page
-                        >= info.pages
-                            - 1
-                ) {
-                    return {
-                        triggered:
-                            false,
-                        available:
-                            true,
-                        atEnd:
-                            true,
-                        reason:
-                            'DATATABLES_AT_END',
-                    };
-                }
-
-                api
-                    .page(
-                        'next',
-                    )
-                    .draw(
-                        'page',
-                    );
-
-                return {
-                    triggered:
-                        true,
-                    available:
-                        true,
-                    atEnd:
-                        false,
-                    pageBefore:
+                    if (
                         Number.isFinite(
                             info
                                 ?.page,
                         )
-                            ? info.page
-                            : null,
-                    reason:
-                        'DATATABLES_API',
-                };
-            } catch (error) {
-                return {
-                    triggered:
-                        false,
-                    available:
-                        true,
-                    reason:
-                        'DATATABLES_API_FAILED',
-                    error:
-                        error
-                            ?.message
-                        || String(
-                            error,
-                        ),
-                };
-            }
-        },
-    );
+                        && Number.isFinite(
+                            info
+                                ?.pages,
+                        )
+                        && info.pages
+                        > 0
+                        && info.page
+                        >= info.pages
+                        - 1
+                    ) {
+                        return {
+                            triggered:
+                                false,
+
+                            available:
+                                true,
+
+                            atEnd:
+                                true,
+
+                            reason:
+                                'DATATABLES_AT_END',
+                        };
+                    }
+
+                    api
+                        .page(
+                            'next',
+                        )
+                        .draw(
+                            'page',
+                        );
+
+                    return {
+                        triggered:
+                            true,
+
+                        available:
+                            true,
+
+                        atEnd:
+                            false,
+
+                        pageBefore:
+                            Number.isFinite(
+                                info
+                                    ?.page,
+                            )
+                                ? info
+                                    .page
+                                : null,
+
+                        reason:
+                            'DATATABLES_API',
+                    };
+                } catch (error) {
+                    return {
+                        triggered:
+                            false,
+
+                        available:
+                            true,
+
+                        reason:
+                            'DATATABLES_API_FAILED',
+
+                        error:
+                            error
+                                ?.message
+                            || String(
+                                error,
+                            ),
+                    };
+                }
+            },
+        );
 }
 
-async function triggerNextPageWithDomFallback(
-    page,
-) {
+async function triggerNextPageWithDomFallback(page) {
     const table =
         await getProductTable(
             page,
@@ -3365,89 +4886,99 @@ async function triggerNextPageWithDomFallback(
         return {
             triggered:
                 false,
+
             reason:
                 'PRODUCT_TABLE_NOT_FOUND',
         };
     }
 
-    return table.evaluate(
-        (tableElement) => {
-            const wrapper =
-                tableElement
-                    .closest(
-                        '.dataTables_wrapper',
-                    )
-                || tableElement
-                    .parentElement
-                    ?.closest(
-                        '.dataTables_wrapper',
-                    )
-                || tableElement
-                    .parentElement
-                || document;
-
-            const next =
-                wrapper
-                    .querySelector(
-                        '.paginate_button.next, button[id$="_next"]',
-                    );
-
-            if (!next) {
-                return {
-                    triggered:
-                        false,
-                    reason:
-                        'NEXT_BUTTON_NOT_FOUND',
-                };
-            }
-
-            const classNames =
-                String(
-                    next
-                        .getAttribute(
-                            'class',
+    return table
+        .evaluate(
+            (tableElement) => {
+                const wrapper =
+                    tableElement
+                        .closest(
+                            '.dataTables_wrapper',
                         )
-                    || '',
-                )
-                    .split(/\s+/)
-                    .filter(
-                        Boolean,
-                    );
+                    || tableElement
+                        .parentElement
+                        ?.closest(
+                            '.dataTables_wrapper',
+                        )
+                    || tableElement
+                        .parentElement
+                    || document;
 
-            const disabled =
-                next
-                    .hasAttribute(
-                        'disabled',
+                const next =
+                    wrapper
+                        .querySelector(
+                            '.paginate_button.next, button[id$="_next"]',
+                        );
+
+                if (!next) {
+                    return {
+                        triggered:
+                            false,
+
+                        reason:
+                            'NEXT_BUTTON_NOT_FOUND',
+                    };
+                }
+
+                const classNames =
+                    String(
+                        next
+                            .getAttribute(
+                                'class',
+                            )
+                        || '',
                     )
-                || next
-                    .getAttribute(
-                        'aria-disabled',
-                    )
+                        .split(
+                            /\s+/,
+                        )
+                        .filter(
+                            Boolean,
+                        );
+
+                const disabled =
+                    next
+                        .hasAttribute(
+                            'disabled',
+                        )
+                    || next
+                        .getAttribute(
+                            'aria-disabled',
+                        )
                     === 'true'
-                || classNames
-                    .includes(
-                        'disabled',
-                    );
+                    || classNames
+                        .includes(
+                            'disabled',
+                        );
 
-            if (disabled) {
+                if (
+                    disabled
+                ) {
+                    return {
+                        triggered:
+                            false,
+
+                        reason:
+                            'NEXT_BUTTON_DISABLED',
+                    };
+                }
+
+                next
+                    .click();
+
                 return {
                     triggered:
-                        false,
+                        true,
+
                     reason:
-                        'NEXT_BUTTON_DISABLED',
+                        'DOM_CLICK',
                 };
-            }
-
-            next.click();
-
-            return {
-                triggered:
-                    true,
-                reason:
-                    'DOM_CLICK',
-            };
-        },
-    );
+            },
+        );
 }
 
 async function waitForPaginationMove(
@@ -3461,7 +4992,8 @@ async function waitForPaginationMove(
                 const cleanText =
                     (value) =>
                         String(
-                            value ?? '',
+                            value
+                            ?? '',
                         )
                             .replace(
                                 /\u00a0/g,
@@ -3528,15 +5060,16 @@ async function waitForPaginationMove(
                         );
 
                 const table =
-                    tables.find(
-                        (candidate) =>
-                            candidate
-                                .querySelectorAll(
-                                    'tbody tr',
-                                )
-                                .length
+                    tables
+                        .find(
+                            (candidate) =>
+                                candidate
+                                    .querySelectorAll(
+                                        'tbody tr',
+                                    )
+                                    .length
                                 > 0,
-                    )
+                        )
                     || tables[0];
 
                 if (!table) {
@@ -3544,9 +5077,10 @@ async function waitForPaginationMove(
                 }
 
                 const wrapper =
-                    table.closest(
-                        '.dataTables_wrapper',
-                    )
+                    table
+                        .closest(
+                            '.dataTables_wrapper',
+                        )
                     || table
                         .parentElement
                         ?.closest(
@@ -3600,12 +5134,14 @@ async function waitForPaginationMove(
                             )
                     ) {
                         const instance =
-                            jq(table);
+                            jq(
+                                table,
+                            );
 
                         const api =
                             typeof instance
                                 .DataTable
-                                === 'function'
+                            === 'function'
                                 ? instance
                                     .DataTable()
                                 : instance
@@ -3622,7 +5158,8 @@ async function waitForPaginationMove(
                                 info
                                     ?.page,
                             )
-                                ? info.page
+                                ? info
+                                    .page
                                 : null;
                     }
                 } catch {
@@ -3633,28 +5170,28 @@ async function waitForPaginationMove(
                     (
                         previous
                             .dataTablePage
-                            !== null
+                        !== null
                         && currentDataTablePage
-                            !== null
+                        !== null
                         && currentDataTablePage
-                            !== previous
-                                .dataTablePage
+                        !== previous
+                            .dataTablePage
                     )
                     || (
                         previous
                             .activePage
                         && currentActivePage
                         && currentActivePage
-                            !== previous
-                                .activePage
+                        !== previous
+                            .activePage
                     )
                     || (
                         previous
                             .firstRow
                         && currentFirstRow
                         && currentFirstRow
-                            !== previous
-                                .firstRow
+                        !== previous
+                            .firstRow
                     )
                 );
             },
@@ -3683,10 +5220,13 @@ async function settleAfterPagination(
             5000,
         );
 
-    if (!idle) {
-        crawlerLog.debug(
-            'BPOM pagination moved, but the UI still reports a transient processing state.',
-        );
+    if (
+        !idle
+    ) {
+        crawlerLog
+            .debug(
+                'BPOM pagination moved, but the UI still reports a transient processing state.',
+            );
     }
 
     await page
@@ -3717,8 +5257,11 @@ async function clickNext(
         || before.nextDisabled
     ) {
         return {
-            status: 'end',
-            recovered: false,
+            status:
+                'end',
+
+            recovered:
+                false,
         };
     }
 
@@ -3727,7 +5270,8 @@ async function clickNext(
             page,
             crawlerLog,
             {
-                force: true,
+                force:
+                    true,
             },
         );
 
@@ -3745,10 +5289,13 @@ async function clickNext(
             5000,
         );
 
-    if (!initialIdle) {
-        crawlerLog.warning(
-            'BPOM UI was still busy before pagination; trying pagination with recovery safeguards.',
-        );
+    if (
+        !initialIdle
+    ) {
+        crawlerLog
+            .warning(
+                'BPOM UI was still busy before pagination; trying pagination with recovery safeguards.',
+            );
     }
 
     const currentBeforeClick =
@@ -3763,12 +5310,16 @@ async function clickNext(
         )
     ) {
         return {
-            status: 'moved',
-            recovered: true,
+            status:
+                'moved',
+
+            recovered:
+                true,
         };
     }
 
-    let lastError = null;
+    let lastError =
+        null;
 
     const normal =
         await triggerNextPageWithPlaywright(
@@ -3785,7 +5336,9 @@ async function clickNext(
                 3500,
             );
 
-        if (moved) {
+        if (
+            moved
+        ) {
             await settleAfterPagination(
                 page,
                 delay,
@@ -3795,6 +5348,7 @@ async function clickNext(
             return {
                 status:
                     'moved',
+
                 recovered:
                     false,
             };
@@ -3816,14 +5370,15 @@ async function clickNext(
             );
     }
 
-    crawlerLog.warning(
-        'BPOM normal pagination failed; trying DataTables API recovery.',
-        {
-            error:
-                lastError
-                    .message,
-        },
-    );
+    crawlerLog
+        .warning(
+            'BPOM normal pagination failed; trying DataTables API recovery.',
+            {
+                error:
+                    lastError
+                        .message,
+            },
+        );
 
     paginationStats
         .localRetries++;
@@ -3854,6 +5409,7 @@ async function clickNext(
         return {
             status:
                 'moved',
+
             recovered:
                 true,
         };
@@ -3870,18 +5426,21 @@ async function clickNext(
         );
 
     if (
-        apiResult.atEnd
+        apiResult
+            .atEnd
     ) {
         return {
             status:
                 'end',
+
             recovered:
                 true,
         };
     }
 
     if (
-        apiResult.triggered
+        apiResult
+            .triggered
     ) {
         const moved =
             await waitForPaginationMove(
@@ -3890,7 +5449,9 @@ async function clickNext(
                 4500,
             );
 
-        if (moved) {
+        if (
+            moved
+        ) {
             paginationStats
                 .recoveries++;
 
@@ -3903,6 +5464,7 @@ async function clickNext(
             return {
                 status:
                     'moved',
+
                 recovered:
                     true,
             };
@@ -3925,7 +5487,8 @@ async function clickNext(
     }
 
     if (
-        !apiResult.available
+        !apiResult
+            .available
     ) {
         paginationStats
             .localRetries++;
@@ -3939,7 +5502,8 @@ async function clickNext(
             );
 
         if (
-            domResult.triggered
+            domResult
+                .triggered
         ) {
             const moved =
                 await waitForPaginationMove(
@@ -3948,7 +5512,9 @@ async function clickNext(
                     3500,
                 );
 
-            if (moved) {
+            if (
+                moved
+            ) {
                 paginationStats
                     .recoveries++;
 
@@ -3961,6 +5527,7 @@ async function clickNext(
                 return {
                     status:
                         'moved',
+
                     recovered:
                         true,
                 };
@@ -3981,22 +5548,27 @@ async function clickNext(
     paginationStats
         .failures++;
 
-    crawlerLog.warning(
-        'BPOM pagination recovery exhausted.',
-        {
-            error:
-                lastError
-                    ?.message
-                || String(
+    crawlerLog
+        .warning(
+            'BPOM pagination recovery exhausted.',
+            {
+                error:
                     lastError
-                    || '',
-                ),
-        },
-    );
+                        ?.message
+                    || String(
+                        lastError
+                        || '',
+                    ),
+            },
+        );
 
     return {
-        status: 'failed',
-        recovered: false,
+        status:
+            'failed',
+
+        recovered:
+            false,
+
         error:
             lastError
                 ?.message
@@ -4080,7 +5652,7 @@ await Actor.main(async () => {
             baselineWarmupRuns,
         )
         || baselineWarmupRuns
-            < 1
+        < 1
     ) {
         throw new Error(
             'baselineWarmupRuns must be an integer >= 1.',
@@ -4092,7 +5664,7 @@ await Actor.main(async () => {
             newProductWindowDays,
         )
         || newProductWindowDays
-            < 1
+        < 1
     ) {
         throw new Error(
             'newProductWindowDays must be an integer >= 1.',
@@ -4104,7 +5676,7 @@ await Actor.main(async () => {
             detailMaxAgeDays,
         )
         || detailMaxAgeDays
-            < 1
+        < 1
     ) {
         throw new Error(
             'detailMaxAgeDays must be an integer >= 1.',
@@ -4116,7 +5688,7 @@ await Actor.main(async () => {
             detailFetchLimitPerRun,
         )
         || detailFetchLimitPerRun
-            < 0
+        < 0
     ) {
         throw new Error(
             'detailFetchLimitPerRun must be an integer >= 0.',
@@ -4150,7 +5722,8 @@ await Actor.main(async () => {
     }
 
     const detectChanges =
-        input.detectChanges
+        input
+            .detectChanges
         !== false;
 
     const emit =
@@ -4170,7 +5743,8 @@ await Actor.main(async () => {
 
     const teamsWebhookUrl =
         clean(
-            process.env
+            process
+                .env
                 .TEAMS_WEBHOOK_URL,
         );
 
@@ -4180,25 +5754,32 @@ await Actor.main(async () => {
         );
 
     const itemLimit =
-        maxItemsPerQuery > 0
+        maxItemsPerQuery
+        > 0
             ? maxItemsPerQuery
             : Infinity;
 
-    if (debug) {
+    if (
+        debug
+    ) {
         log.setLevel(
-            log.LEVELS.DEBUG,
+            log
+                .LEVELS
+                .DEBUG,
         );
     }
 
     const stateStoreName =
         clean(
-            input.stateStoreName
+            input
+                .stateStoreName
             || 'indonesian-cosmetics-intelligence-state',
         );
 
     const stateKey =
         clean(
-            input.stateKey
+            input
+                .stateKey
             || 'default',
         )
             .replace(
@@ -4227,14 +5808,14 @@ await Actor.main(async () => {
                 ?.watchSignature
             && rawPreviousState
                 .watchSignature
-                === watchSignature,
+            === watchSignature,
         );
 
     const previousRecordsForDetail =
         watchlistMatchesPreviousState
             ? rawPreviousState
                 .records
-                ?? {}
+            ?? {}
             : {};
 
     const previousStateUpdatedAtForDetail =
@@ -4250,19 +5831,32 @@ await Actor.main(async () => {
         {
             version:
                 ACTOR_VERSION,
+
             jobs:
                 jobs.length,
+
             detailStrategy,
+
             detectChanges,
+
             emit,
+
             maxItemsPerQuery,
+
             maxPagesPerQuery,
+
             baselineWarmupRuns,
+
             newProductWindowDays,
+
             detailMaxAgeDays,
+
             detailFetchLimitPerRun,
+
             allowPartialSnapshotUpdate,
+
             debug,
+
             teamsNotificationsEnabled,
         },
     );
@@ -4276,13 +5870,26 @@ await Actor.main(async () => {
         new Map();
 
     const detailStats = {
-        requested: 0,
-        skipped: 0,
-        succeeded: 0,
-        failed: 0,
-        localRetries: 0,
-        budgetSkipped: 0,
-        byReason: {},
+        requested:
+            0,
+
+        skipped:
+            0,
+
+        succeeded:
+            0,
+
+        failed:
+            0,
+
+        localRetries:
+            0,
+
+        budgetSkipped:
+            0,
+
+        byReason:
+            {},
     };
 
     const detailDecisionRegistrationNumbers =
@@ -4290,16 +5897,22 @@ await Actor.main(async () => {
 
     const crawler =
         new PlaywrightCrawler({
-            maxConcurrency: 1,
+            maxConcurrency:
+                1,
+
             requestHandlerTimeoutSecs:
                 1800,
+
             navigationTimeoutSecs:
                 90,
-            maxRequestRetries: 5,
+
+            maxRequestRetries:
+                5,
 
             launchContext: {
                 launchOptions: {
-                    headless: true,
+                    headless:
+                        true,
                 },
             },
 
@@ -4318,7 +5931,9 @@ await Actor.main(async () => {
                             .retryCount
                         ?? 0;
 
-                    if (retry > 0) {
+                    if (
+                        retry > 0
+                    ) {
                         const delayMs =
                             Math.min(
                                 15000,
@@ -4332,13 +5947,14 @@ await Actor.main(async () => {
                                 ),
                             );
 
-                        crawlerLog.warning(
-                            `Retrying BPOM after ${delayMs} ms backoff.`,
-                            {
-                                retryCount:
-                                    retry,
-                            },
-                        );
+                        crawlerLog
+                            .warning(
+                                `Retrying BPOM after ${delayMs} ms backoff.`,
+                                {
+                                    retryCount:
+                                        retry,
+                                },
+                            );
 
                         await page
                             .waitForTimeout(
@@ -4350,8 +5966,10 @@ await Actor.main(async () => {
                         .setExtraHTTPHeaders({
                             'Accept-Language':
                                 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+
                             Accept:
                                 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+
                             'Upgrade-Insecure-Requests':
                                 '1',
                         });
@@ -4369,16 +5987,18 @@ await Actor.main(async () => {
             async requestHandler({
                 page,
                 request,
-                log: crawlerLog,
+                log:
+                    crawlerLog,
             }) {
                 const job =
                     request
                         .userData
                         .job;
 
-                crawlerLog.info(
-                    `Querying BPOM: ${job.kind}=${job.value}`,
-                );
+                crawlerLog
+                    .info(
+                        `Querying BPOM: ${job.kind}=${job.value}`,
+                    );
 
                 await waitForTable(
                     page,
@@ -4395,11 +6015,18 @@ await Actor.main(async () => {
                     page,
                 );
 
-                let pageNumber = 1;
-                let queryCount = 0;
-                let duplicateRows = 0;
+                let pageNumber =
+                    1;
+
+                let queryCount =
+                    0;
+
+                let duplicateRows =
+                    0;
+
                 let stopReason =
                     'unknown';
+
                 let coverageComplete =
                     false;
 
@@ -4410,19 +6037,47 @@ await Actor.main(async () => {
                     new Set();
 
                 const paginationStats = {
-                    localRetries: 0,
-                    recoveries: 0,
-                    failures: 0,
-                    uiCleanups: 0,
-                    apiFallbacks: 0,
-                    domFallbacks: 0,
+                    localRetries:
+                        0,
+
+                    recoveries:
+                        0,
+
+                    failures:
+                        0,
+
+                    uiCleanups:
+                        0,
+
+                    apiFallbacks:
+                        0,
+
+                    domFallbacks:
+                        0,
+                };
+
+                const sourceFilterStats = {
+                    scannedRows:
+                        0,
+
+                    acceptedRows:
+                        0,
+
+                    mismatchedRows:
+                        0,
+
+                    unverifiableRows:
+                        0,
+
+                    mismatchSamples:
+                        [],
                 };
 
                 while (
                     pageNumber
-                        <= maxPagesPerQuery
+                    <= maxPagesPerQuery
                     && queryCount
-                        < itemLimit
+                    < itemLimit
                 ) {
                     const maxRemaining =
                         Number
@@ -4430,7 +6085,7 @@ await Actor.main(async () => {
                                 itemLimit,
                             )
                             ? itemLimit
-                                - queryCount
+                            - queryCount
                             : Number
                                 .MAX_SAFE_INTEGER;
 
@@ -4440,18 +6095,30 @@ await Actor.main(async () => {
                             job,
                             {
                                 detailStrategy,
+
                                 detailMaxAgeDays,
+
                                 detailFetchLimitPerRun,
+
                                 detectChanges,
+
                                 previousRecords:
                                     previousRecordsForDetail,
+
                                 previousStateUpdatedAt:
                                     previousStateUpdatedAtForDetail,
+
                                 runStartedAt,
+
                                 maxRemaining,
+
                                 requestDelayMs,
+
                                 detailStats,
+
                                 detailDecisionRegistrationNumbers,
+
+                                sourceFilterStats,
                             },
                             crawlerLog,
                         );
@@ -4491,7 +6158,9 @@ await Actor.main(async () => {
                                     key,
                                 );
 
-                        if (!existing) {
+                        if (
+                            !existing
+                        ) {
                             collected
                                 .set(
                                     key,
@@ -4521,14 +6190,14 @@ await Actor.main(async () => {
                                         ) =>
                                             match
                                                 .type
-                                                === item
-                                                    .matchedBy
-                                                    .type
+                                            === item
+                                                .matchedBy
+                                                .type
                                             && match
                                                 .value
-                                                === item
-                                                    .matchedBy
-                                                    .value,
+                                            === item
+                                                .matchedBy
+                                                .value,
                                     )
                             ) {
                                 matches
@@ -4543,6 +6212,7 @@ await Actor.main(async () => {
                                     key,
                                     {
                                         ...existing,
+
                                         matches,
                                     },
                                 );
@@ -4587,7 +6257,7 @@ await Actor.main(async () => {
                     if (
                         paginationResult
                             .status
-                            === 'end'
+                        === 'end'
                     ) {
                         coverageComplete =
                             true;
@@ -4601,7 +6271,7 @@ await Actor.main(async () => {
                     if (
                         paginationResult
                             .status
-                            === 'failed'
+                        === 'failed'
                     ) {
                         coverageComplete =
                             false;
@@ -4609,18 +6279,21 @@ await Actor.main(async () => {
                         stopReason =
                             'pagination_failure';
 
-                        crawlerLog.warning(
-                            'Stopping this BPOM query without whole-query retry because local pagination recovery was exhausted.',
-                            {
-                                queryId:
-                                    request
-                                        .uniqueKey,
-                                pageNumber,
-                                error:
-                                    paginationResult
-                                        .error,
-                            },
-                        );
+                        crawlerLog
+                            .warning(
+                                'Stopping this BPOM query without whole-query retry because local pagination recovery was exhausted.',
+                                {
+                                    queryId:
+                                        request
+                                            .uniqueKey,
+
+                                    pageNumber,
+
+                                    error:
+                                        paginationResult
+                                            .error,
+                                },
+                            );
 
                         break;
                     }
@@ -4628,50 +6301,140 @@ await Actor.main(async () => {
                     pageNumber++;
                 }
 
+                /*
+                 * A tiny number of mismatched rows can occur because of
+                 * transient BPOM table state. They are rejected safely.
+                 *
+                 * A large mismatch rate means the actual source filter may
+                 * not have been applied correctly, so the whole query must
+                 * fail its integrity gate.
+                 */
+                const sourceFilterMismatchRatio =
+                    sourceFilterStats
+                        .scannedRows
+                    > 0
+                        ? sourceFilterStats
+                            .mismatchedRows
+                            / sourceFilterStats
+                                .scannedRows
+                        : 0;
+
+                const filterIntegrityPassed =
+                    !(
+                        sourceFilterStats
+                            .mismatchedRows
+                        >= 10
+                        && sourceFilterMismatchRatio
+                        >= 0.05
+                    );
+
+                if (
+                    !filterIntegrityPassed
+                ) {
+                    crawlerLog
+                        .error(
+                            'BPOM source filter integrity check failed.',
+                            {
+                                job,
+
+                                scannedRows:
+                                    sourceFilterStats
+                                        .scannedRows,
+
+                                acceptedRows:
+                                    sourceFilterStats
+                                        .acceptedRows,
+
+                                mismatchedRows:
+                                    sourceFilterStats
+                                        .mismatchedRows,
+
+                                mismatchRatio:
+                                    sourceFilterMismatchRatio,
+                            },
+                        );
+                }
+
                 const querySummary = {
                     queryId:
                         request
                             .uniqueKey,
+
                     kind:
                         job.kind,
+
                     value:
                         job.value,
+
                     rawRowsCollected:
-                        queryCount,
+                        sourceFilterStats
+                            .scannedRows,
+
+                    acceptedRows:
+                        sourceFilterStats
+                            .acceptedRows,
+
+                    sourceFilterMismatches:
+                        sourceFilterStats
+                            .mismatchedRows,
+
+                    sourceFilterMismatchRatio,
+
+                    sourceFilterUnverifiableRows:
+                        sourceFilterStats
+                            .unverifiableRows,
+
+                    sourceFilterMismatchSamples:
+                        sourceFilterStats
+                            .mismatchSamples,
+
+                    filterIntegrityPassed,
+
                     uniqueProducts:
                         seenRegistrationNumbers
                             .size,
+
                     duplicateRows,
+
                     duplicateRegistrationNumberCount:
                         duplicateRegistrationNumbers
                             .size,
-                    duplicateRegistrationNumbers:
-                        [
-                            ...duplicateRegistrationNumbers,
-                        ]
-                            .slice(
-                                0,
-                                100,
-                            ),
+
+                    duplicateRegistrationNumbers: [
+                        ...duplicateRegistrationNumbers,
+                    ]
+                        .slice(
+                            0,
+                            100,
+                        ),
+
                     pagesVisited:
                         pageNumber,
+
                     coverageComplete,
+
                     stopReason,
+
                     paginationLocalRetries:
                         paginationStats
                             .localRetries,
+
                     paginationRecoveries:
                         paginationStats
                             .recoveries,
+
                     paginationFailures:
                         paginationStats
                             .failures,
+
                     paginationUiCleanups:
                         paginationStats
                             .uiCleanups,
+
                     paginationApiFallbacks:
                         paginationStats
                             .apiFallbacks,
+
                     paginationDomFallbacks:
                         paginationStats
                             .domFallbacks,
@@ -4684,16 +6447,18 @@ await Actor.main(async () => {
                         querySummary,
                     );
 
-                crawlerLog.info(
-                    `Collected ${queryCount} raw row(s) / ${seenRegistrationNumbers.size} unique product(s) for ${job.kind}=${job.value}.`,
-                    querySummary,
-                );
+                crawlerLog
+                    .info(
+                        `Scanned ${sourceFilterStats.scannedRows} row(s), accepted ${queryCount} row(s) / ${seenRegistrationNumbers.size} unique product(s) for ${job.kind}=${job.value}.`,
+                        querySummary,
+                    );
             },
 
             async failedRequestHandler(
                 {
                     request,
-                    log: crawlerLog,
+                    log:
+                        crawlerLog,
                 },
                 error,
             ) {
@@ -4702,15 +6467,17 @@ await Actor.main(async () => {
                         .userData
                         .job;
 
-                failedJobs.push({
-                    job,
-                    error:
-                        error
-                            ?.message
-                        || String(
-                            error,
-                        ),
-                });
+                failedJobs
+                    .push({
+                        job,
+
+                        error:
+                            error
+                                ?.message
+                            || String(
+                                error,
+                            ),
+                    });
 
                 querySummaries
                     .set(
@@ -4720,72 +6487,109 @@ await Actor.main(async () => {
                             queryId:
                                 request
                                     .uniqueKey,
+
                             kind:
                                 job.kind,
+
                             value:
                                 job.value,
+
                             rawRowsCollected:
                                 0,
+
+                            acceptedRows:
+                                0,
+
+                            sourceFilterMismatches:
+                                0,
+
+                            sourceFilterMismatchRatio:
+                                0,
+
+                            sourceFilterUnverifiableRows:
+                                0,
+
+                            sourceFilterMismatchSamples:
+                                [],
+
+                            filterIntegrityPassed:
+                                false,
+
                             uniqueProducts:
                                 0,
+
                             duplicateRows:
                                 0,
+
                             duplicateRegistrationNumberCount:
                                 0,
+
                             duplicateRegistrationNumbers:
                                 [],
+
                             pagesVisited:
                                 0,
+
                             coverageComplete:
                                 false,
+
                             stopReason:
                                 'request_failed',
                         },
                     );
 
-                crawlerLog.error(
-                    `Query failed: ${job.kind}=${job.value}`,
-                    {
-                        error:
-                            error
-                                ?.message,
-                    },
-                );
+                crawlerLog
+                    .error(
+                        `Query failed: ${job.kind}=${job.value}`,
+                        {
+                            error:
+                                error
+                                    ?.message,
+                        },
+                    );
             },
         });
 
-    await crawler.run(
-        jobs.map(
-            (job) => ({
-                url:
-                    BASE_URL,
-                uniqueKey:
-                    `${job.kind}:${job.value}`,
-                userData: {
-                    job,
-                },
-            }),
-        ),
-    );
+    await crawler
+        .run(
+            jobs
+                .map(
+                    (job) => ({
+                        url:
+                            BASE_URL,
+
+                        uniqueKey:
+                            `${job.kind}:${job.value}`,
+
+                        userData: {
+                            job,
+                        },
+                    }),
+                ),
+        );
 
     const querySummaryList =
-        jobs.map(
-            (job) =>
-                querySummaries
-                    .get(
-                        `${job.kind}:${job.value}`,
-                    ),
-        );
+        jobs
+            .map(
+                (job) =>
+                    querySummaries
+                        .get(
+                            `${job.kind}:${job.value}`,
+                        ),
+            );
 
     const overallCoverageComplete =
         failedJobs.length
-            === 0
+        === 0
         && querySummaryList
             .every(
                 (query) =>
                     query
                         ?.coverageComplete
-                    === true,
+                    === true
+                    && query
+                        ?.filterIntegrityPassed
+                    !== false,
             );
 
     const incompleteQueries =
@@ -4794,7 +6598,20 @@ await Actor.main(async () => {
                 (query) =>
                     query
                         ?.coverageComplete
-                    !== true,
+                    !== true
+                    || query
+                        ?.filterIntegrityPassed
+                    === false,
+            )
+            .length;
+
+    const failedFilterIntegrityQueries =
+        querySummaryList
+            .filter(
+                (query) =>
+                    query
+                        ?.filterIntegrityPassed
+                    === false,
             )
             .length;
 
@@ -4809,11 +6626,17 @@ await Actor.main(async () => {
         ?? {
             version:
                 SNAPSHOT_VERSION,
+
             watchSignature,
-            successfulRuns: 0,
+
+            successfulRuns:
+                0,
+
             baselineReady:
                 false,
-            records: {},
+
+            records:
+                {},
         };
 
     if (
@@ -4822,7 +6645,7 @@ await Actor.main(async () => {
             ?.watchSignature
         && rawPreviousState
             .watchSignature
-            !== watchSignature
+        !== watchSignature
     ) {
         baselineReset =
             true;
@@ -4833,11 +6656,17 @@ await Actor.main(async () => {
         previousState = {
             version:
                 SNAPSHOT_VERSION,
+
             watchSignature,
-            successfulRuns: 0,
+
+            successfulRuns:
+                0,
+
             baselineReady:
                 false,
-            records: {},
+
+            records:
+                {},
         };
 
         log.warning(
@@ -4868,7 +6697,7 @@ await Actor.main(async () => {
                 .baselineReady
             === true
             || successfulRunsBefore
-                >= baselineWarmupRuns,
+            >= baselineWarmupRuns,
         );
 
     let baselineStartedAtBefore =
@@ -4880,7 +6709,7 @@ await Actor.main(async () => {
     if (
         !baselineStartedAtBefore
         && successfulRunsBefore
-            > 0
+        > 0
     ) {
         baselineStartedAtBefore =
             earliestFirstSeenAt(
@@ -4919,6 +6748,7 @@ await Actor.main(async () => {
             'Existing trusted baseline has no baselineReadyAt timestamp. Using the previous snapshot updatedAt as a conservative migration boundary.',
             {
                 stateKey,
+
                 baselineReadyAt:
                     baselineReadyAtBefore,
             },
@@ -5002,15 +6832,25 @@ await Actor.main(async () => {
             ...internalRecord,
         };
 
-        delete record.__basicHash;
-        delete record.__detailHash;
-        delete record.__detailKnown;
-        delete record.__detailKnownFields;
-        delete record.__detailFetched;
+        delete record
+            .__basicHash;
+
+        delete record
+            .__detailHash;
+
+        delete record
+            .__detailKnown;
+
+        delete record
+            .__detailKnownFields;
+
+        delete record
+            .__detailFetched;
 
         record.registrant =
             sanitizeRegistrant(
-                record.registrant,
+                record
+                    .registrant,
             );
 
         record.cosmeticsManufacturer =
@@ -5024,7 +6864,9 @@ await Actor.main(async () => {
                 .registrationNumber;
 
         const previousEntry =
-            previousRecords[id];
+            previousRecords[
+                id
+            ];
 
         const previousRecord =
             previousEntry
@@ -5066,13 +6908,15 @@ await Actor.main(async () => {
 
         const ageDays =
             issuedAgeDays(
-                record.issuedDate,
+                record
+                    .issuedDate,
                 runStartedAt,
             );
 
         if (
             previousEntry
-            && priorMisses > 0
+            && priorMisses
+            > 0
         ) {
             reappearedCount++;
         }
@@ -5117,10 +6961,14 @@ await Actor.main(async () => {
         ];
 
         let eventType;
+
         let classificationReason;
+
         let previous;
 
-        if (!detectChanges) {
+        if (
+            !detectChanges
+        ) {
             eventType =
                 'SNAPSHOT';
 
@@ -5152,7 +7000,8 @@ await Actor.main(async () => {
                     );
 
                 if (
-                    ageDays === null
+                    ageDays
+                    === null
                 ) {
                     eventType =
                         'DISCOVERED';
@@ -5184,7 +7033,8 @@ await Actor.main(async () => {
 
                     discoveredCount++;
                 } else if (
-                    ageDays < -1
+                    ageDays
+                    < -1
                 ) {
                     eventType =
                         'DISCOVERED';
@@ -5295,11 +7145,14 @@ await Actor.main(async () => {
                 .push({
                     registrationNumber:
                         id,
+
                     issuedDate:
                         record
                             .issuedDate,
+
                     issuedAgeDays:
                         ageDays,
+
                     classificationReason,
                 });
         }
@@ -5314,11 +7167,14 @@ await Actor.main(async () => {
                 .push({
                     registrationNumber:
                         id,
+
                     issuedDate:
                         record
                             .issuedDate,
+
                     issuedAgeDays:
                         ageDays,
+
                     classificationReason,
                 });
         }
@@ -5333,9 +7189,12 @@ await Actor.main(async () => {
                 .push({
                     registrationNumber:
                         id,
+
                     changedFields:
                         actualChangedFields,
+
                     enrichedFields,
+
                     classificationReason,
                 });
         }
@@ -5350,22 +7209,31 @@ await Actor.main(async () => {
                 .push({
                     registrationNumber:
                         id,
+
                     enrichedFields,
+
                     classificationReason,
                 });
         }
 
         const output = {
             eventType,
+
             classificationReason,
+
             issuedAgeDays:
                 ageDays,
+
             ...record,
+
             detectedAt:
                 isoNow(),
+
             changedFields:
                 actualChangedFields,
+
             enrichedFields,
+
             ...(
                 previous
                     ? {
@@ -5377,9 +7245,9 @@ await Actor.main(async () => {
 
         if (
             eventType
-                === 'NEW'
+            === 'NEW'
             || eventType
-                === 'CHANGED'
+            === 'CHANGED'
         ) {
             operationalAlertRecords
                 .push(
@@ -5396,9 +7264,9 @@ await Actor.main(async () => {
             const isOperationalEvent =
                 (
                     eventType
-                        === 'NEW'
+                    === 'NEW'
                     || eventType
-                        === 'CHANGED'
+                    === 'CHANGED'
                 );
 
             if (
@@ -5426,34 +7294,45 @@ await Actor.main(async () => {
                 )
                 : runStartedAt;
 
-        observedRecords[id] = {
+        observedRecords[
+            id
+        ] = {
             hash:
                 stableHash(
                     record,
                 ),
+
             basicHash:
                 currentBasicHash,
+
             detailHash:
                 currentDetailHash,
+
             detailKnown:
                 currentDetailKnown,
-            detailKnownFields:
-                [
-                    ...currentKnownDetailFields,
-                ],
+
+            detailKnownFields: [
+                ...currentKnownDetailFields,
+            ],
+
             lastDetailFetchedAt,
+
             record,
+
             firstSeenAt:
                 previousEntry
                     ?.firstSeenAt
                 || fallbackFirstSeenAt,
+
             lastSeenAt:
                 runStartedAt,
+
             observationCount:
                 previousObservationCount(
                     previousEntry,
                 )
                 + 1,
+
             consecutiveMisses:
                 0,
         };
@@ -5476,6 +7355,69 @@ await Actor.main(async () => {
             previousRecords,
         );
 
+    /*
+     * Clean historical contamination from snapshots created before
+     * source-filter integrity validation existed.
+     *
+     * A previous record that can be conclusively shown to no longer
+     * match any configured monitoring job is not carried forward.
+     *
+     * We use conservative matching: if a job cannot be verified from
+     * the stored record, the record is retained.
+     */
+    let prunedOutOfScopePreviousRecords =
+        0;
+
+    const eligiblePreviousIds =
+        previousIds
+            .filter(
+                (id) => {
+                    const previousEntry =
+                        previousRecords[
+                            id
+                        ];
+
+                    const previousRecord =
+                        previousEntry
+                            ?.record;
+
+                    if (
+                        !previousRecord
+                    ) {
+                        return true;
+                    }
+
+                    const keep =
+                        recordMatchesAnyJobConservatively(
+                            canonicalizeLegacyRecord(
+                                previousRecord,
+                            ),
+                            jobs,
+                        );
+
+                    if (
+                        !keep
+                    ) {
+                        prunedOutOfScopePreviousRecords++;
+                    }
+
+                    return keep;
+                },
+            );
+
+    if (
+        prunedOutOfScopePreviousRecords
+        > 0
+    ) {
+        log.warning(
+            'Pruning out-of-scope record(s) from the previous snapshot.',
+            {
+                prunedOutOfScopePreviousRecords,
+                stateKey,
+            },
+        );
+    }
+
     const observedIds =
         new Set(
             Object.keys(
@@ -5489,7 +7431,7 @@ await Actor.main(async () => {
             && !baselineReset
             && overallCoverageComplete
         )
-            ? previousIds
+            ? eligiblePreviousIds
                 .filter(
                     (id) =>
                         !observedIds
@@ -5502,7 +7444,7 @@ await Actor.main(async () => {
     const snapshotCanUpdate =
         detectChanges
         && failedJobs.length
-            === 0
+        === 0
         && (
             overallCoverageComplete
             || allowPartialSnapshotUpdate
@@ -5521,7 +7463,7 @@ await Actor.main(async () => {
     ) {
         for (
             const id
-            of previousIds
+            of eligiblePreviousIds
         ) {
             if (
                 observedIds
@@ -5533,9 +7475,13 @@ await Actor.main(async () => {
             }
 
             const previousEntry =
-                previousRecords[id];
+                previousRecords[
+                    id
+                ];
 
-            if (!previousEntry) {
+            if (
+                !previousEntry
+            ) {
                 continue;
             }
 
@@ -5546,8 +7492,11 @@ await Actor.main(async () => {
                     ? 1
                     : 0;
 
-            nextRecords[id] = {
+            nextRecords[
+                id
+            ] = {
                 ...previousEntry,
+
                 firstSeenAt:
                     previousEntry
                         .firstSeenAt
@@ -5557,6 +7506,7 @@ await Actor.main(async () => {
                     || previousState
                         .updatedAt
                     || runStartedAt,
+
                 lastSeenAt:
                     previousEntry
                         .lastSeenAt
@@ -5566,10 +7516,12 @@ await Actor.main(async () => {
                     || previousState
                         .updatedAt
                     || runStartedAt,
+
                 observationCount:
                     previousObservationCount(
                         previousEntry,
                     ),
+
                 consecutiveMisses:
                     previousConsecutiveMisses(
                         previousEntry,
@@ -5592,7 +7544,7 @@ await Actor.main(async () => {
         Boolean(
             baselineReadyBeforeRun
             || successfulRunsAfter
-                >= baselineWarmupRuns,
+            >= baselineWarmupRuns,
         );
 
     let baselineStartedAtAfter =
@@ -5603,7 +7555,7 @@ await Actor.main(async () => {
         && snapshotCanUpdate
         && overallCoverageComplete
         && successfulRunsAfter
-            >= 1
+        >= 1
     ) {
         baselineStartedAtAfter =
             runStartedAt;
@@ -5632,25 +7584,38 @@ await Actor.main(async () => {
                 {
                     version:
                         SNAPSHOT_VERSION,
+
                     actorVersion:
                         ACTOR_VERSION,
+
                     watchSignature,
+
                     successfulRuns:
                         successfulRunsAfter,
+
                     baselineWarmupRuns,
+
                     baselineStartedAt:
                         baselineStartedAtAfter,
+
                     baselineReadyAt:
                         baselineReadyAtAfter,
+
                     baselineReady:
                         baselineReadyAfterRun,
+
                     updatedAt:
                         isoNow(),
+
                     coverageComplete:
                         overallCoverageComplete,
+
                     detailStrategy,
+
                     detailMaxAgeDays,
+
                     detailFetchLimitPerRun,
+
                     records:
                         nextRecords,
                 },
@@ -5662,9 +7627,11 @@ await Actor.main(async () => {
             'Snapshot NOT updated because coverage was incomplete or a query failed.',
             {
                 overallCoverageComplete,
+
                 failedJobs:
                     failedJobs
                         .length,
+
                 allowPartialSnapshotUpdate,
             },
         );
@@ -5677,40 +7644,49 @@ await Actor.main(async () => {
     const teamsStats = {
         enabled:
             teamsNotificationsEnabled,
+
         eligibleRecords:
             operationalAlertRecords
                 .length,
+
         newRecords:
             operationalAlertRecords
                 .filter(
                     (record) =>
                         record
                             .eventType
-                        === 'NEW',
+                    === 'NEW',
                 )
                 .length,
+
         changedRecords:
             operationalAlertRecords
                 .filter(
                     (record) =>
                         record
                             .eventType
-                        === 'CHANGED',
+                    === 'CHANGED',
                 )
                 .length,
+
         attempted:
             0,
+
         succeeded:
             0,
+
         failed:
             0,
+
         retries:
             0,
+
         suppressedByQualityGate:
             qualityGatePassed
                 ? 0
                 : operationalAlertRecords
                     .length,
+
         failureSamples:
             [],
     };
@@ -5754,6 +7730,7 @@ await Actor.main(async () => {
                 operationalEvents:
                     operationalAlertRecords
                         .length,
+
                 incompleteQueries,
             },
         );
@@ -5786,6 +7763,38 @@ await Actor.main(async () => {
                     + (
                         query
                             ?.duplicateRows
+                        ?? 0
+                    ),
+                0,
+            );
+
+    const totalSourceFilterMismatches =
+        querySummaryList
+            .reduce(
+                (
+                    total,
+                    query,
+                ) =>
+                    total
+                    + (
+                        query
+                            ?.sourceFilterMismatches
+                        ?? 0
+                    ),
+                0,
+            );
+
+    const totalSourceFilterUnverifiableRows =
+        querySummaryList
+            .reduce(
+                (
+                    total,
+                    query,
+                ) =>
+                    total
+                    + (
+                        query
+                            ?.sourceFilterUnverifiableRows
                         ?? 0
                     ),
                 0,
@@ -5907,16 +7916,22 @@ await Actor.main(async () => {
             .map(
                 (id) => {
                     const entry =
-                        nextRecords[id]
-                        || previousRecords[id];
+                        nextRecords[
+                            id
+                        ]
+                        || previousRecords[
+                            id
+                        ];
 
                     return {
                         registrationNumber:
                             id,
+
                         consecutiveMisses:
                             entry
                                 ?.consecutiveMisses
                             ?? 0,
+
                         lastSeenAt:
                             entry
                                 ?.lastSeenAt
@@ -5937,7 +7952,9 @@ await Actor.main(async () => {
     let baselineStatus =
         'DISABLED';
 
-    if (detectChanges) {
+    if (
+        detectChanges
+    ) {
         if (
             baselineReadyBeforeRun
         ) {
@@ -5961,110 +7978,169 @@ await Actor.main(async () => {
         baseline: {
             status:
                 baselineStatus,
+
             requiredSuccessfulRuns:
                 baselineWarmupRuns,
+
             successfulRunsBefore,
+
             successfulRunsAfter,
+
             readyBeforeRun:
                 baselineReadyBeforeRun,
+
             readyAfterRun:
                 baselineReadyAfterRun,
+
             baselineStartedAt:
                 baselineStartedAtAfter
                 || '',
+
             baselineReadyAt:
                 baselineReadyAtAfter
                 || '',
+
             baselineReadyDate:
                 isoDateOnly(
                     baselineReadyAtAfter,
                 ),
+
             legacyBoundaryMigration:
                 legacyBaselineBoundaryApplied,
+
             newProductWindowDays,
         },
 
         monitoringSummary: {
             watchlistQueries:
                 jobs.length,
+
             failedQueries:
                 failedJobs.length,
+
             incompleteQueries,
+
             coverageComplete:
                 overallCoverageComplete,
+
             detailStrategy,
+
             detailMaxAgeDays,
+
             detailFetchLimitPerRun,
+
             detailFetches:
                 detailStats
                     .requested,
+
             detailFetchSucceeded:
                 detailStats
                     .succeeded,
+
             detailFetchFailed:
                 detailStats
                     .failed,
+
             detailLocalRetries:
                 detailStats
                     .localRetries,
+
             detailBudgetSkips:
                 detailStats
                     .budgetSkipped,
+
             detailFetchReasons:
                 detailStats
                     .byReason,
+
             detailSkips:
                 detailStats
                     .skipped,
+
             paginationLocalRetries:
                 totalPaginationLocalRetries,
+
             paginationRecoveries:
                 totalPaginationRecoveries,
+
             paginationFailures:
                 totalPaginationFailures,
+
             paginationUiCleanups:
                 totalPaginationUiCleanups,
+
             paginationApiFallbacks:
                 totalPaginationApiFallbacks,
+
             paginationDomFallbacks:
                 totalPaginationDomFallbacks,
+
             rawRowsCollected:
                 totalRawRowsCollected,
+
             observedThisRun:
                 collected.size,
+
             duplicateRows:
                 totalDuplicateRows,
+
+            sourceFilterMismatches:
+                totalSourceFilterMismatches,
+
+            sourceFilterUnverifiableRows:
+                totalSourceFilterUnverifiableRows,
+
+            failedFilterIntegrityQueries,
+
+            prunedOutOfScopePreviousRecords,
+
             duplicateRegistrationNumbers:
                 uniqueDuplicateRegistrationNumbers
                     .size,
+
             previousKnownProducts:
                 Object.keys(
                     previousRecords,
                 ).length,
+
             retainedFromPreviousSnapshot,
+
             snapshotProducts:
                 persistedSnapshotProducts,
+
             firstSeenProducts:
                 firstSeenCount,
+
             baselineProducts:
                 baselineCount,
+
             newProducts:
                 newCount,
+
             discoveredProducts:
                 discoveredCount,
+
             changedProducts:
                 changedCount,
+
             enrichedProducts:
                 enrichedCount,
+
             unchangedProducts:
                 unchangedCount,
+
             snapshotProductsEmitted:
                 snapshotCount,
+
             emittedRecords:
                 emittedCount,
+
             suppressedOperationalRecords,
+
             possiblyMissingProducts:
-                possiblyMissing.length,
+                possiblyMissing
+                    .length,
+
             reappearedProducts:
                 reappearedCount,
         },
@@ -6088,16 +8164,21 @@ await Actor.main(async () => {
         classificationSamples: {
             new:
                 newCandidates,
+
             discovered:
                 discoveredCandidates,
+
             changed:
                 changedCandidates,
+
             enriched:
                 enrichedCandidates,
         },
 
         baselineReset,
+
         baselineResetReason,
+
         snapshotUpdated:
             snapshotCanUpdate,
 
@@ -6108,12 +8189,20 @@ await Actor.main(async () => {
                 detectChanges
                 && !overallCoverageComplete
             )
-                ? 'INCOMPLETE_MONITORING_COVERAGE'
+                ? (
+                    failedFilterIntegrityQueries
+                    > 0
+                        ? 'SOURCE_FILTER_INTEGRITY_FAILED'
+                        : 'INCOMPLETE_MONITORING_COVERAGE'
+                )
                 : '',
 
         stateStoreName,
+
         stateKey,
+
         watchSignature,
+
         finishedAt:
             isoNow(),
     };
@@ -6132,16 +8221,25 @@ await Actor.main(async () => {
             'Run failed monitoring quality gate because full BPOM coverage was not achieved.',
             {
                 incompleteQueries,
+
                 failedQueries:
-                    failedJobs.length,
+                    failedJobs
+                        .length,
+
                 snapshotUpdated:
                     snapshotCanUpdate,
+
                 suppressedOperationalRecords,
+
+                failedFilterIntegrityQueries,
             },
         );
 
         throw new Error(
-            `Incomplete BPOM monitoring coverage: ${incompleteQueries} query(s) did not reach a natural end.`,
+            failedFilterIntegrityQueries
+            > 0
+                ? `BPOM source filter integrity failed for ${failedFilterIntegrityQueries} query(s).`
+                : `Incomplete BPOM monitoring coverage: ${incompleteQueries} query(s) did not reach a natural end.`,
         );
     }
 
